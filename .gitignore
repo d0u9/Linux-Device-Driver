@@ -37,3 +37,4 @@
 *.mod.c
 *.order
 .tmp_versions
+*.swp
