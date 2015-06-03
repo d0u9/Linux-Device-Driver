@@ -37,9 +37,43 @@ int scull_release(struct inode *inode, struct file *filp)
 }
 
 ssize_t scull_read(struct file *filp, char __user *buff, size_t count,
-	loff_t *offp)
+	loff_t *f_pos)
 {
-	return 0;
+	struct scull_dev *dev = filp->private_data;
+	struct store_block *cur = NULL;
+	int block_index = 0, pos_in_block = 0;
+	int need_to_read = 0;
+	ssize_t retval = 0;
+
+	if (mutex_lock_interruptible(&dev->mutex))
+		return -ERESTARTSYS;
+
+	block_index = (long) *f_pos / SCULL_BUFF_SIZE + 1;
+	pos_in_block = (long) *f_pos % SCULL_BUFF_SIZE;
+
+	if (block_index > atomic_read(&dev->list_entry_counter))
+		return 0;
+
+	need_to_read = (pos_in_block + count) > SCULL_BUFF_SIZE ? 
+		SCULL_BUFF_SIZE : count;
+	PDEBUG("Need to read %d bytes\n", need_to_read);
+
+	list_for_each_entry(cur, &dev->list, list) {
+		if (!(--block_index))
+			break;
+	}
+
+	if (copy_to_user(buff, cur->data + pos_in_block, need_to_read)) {
+	    retval = -EFAULT;
+	    goto out;
+	}
+
+	*f_pos += need_to_read;
+	retval = need_to_read;
+
+out:
+	mutex_unlock(&dev->mutex);
+	return retval;
 }
 
 ssize_t scull_write(struct file *filp, const char __user *buff, size_t count,

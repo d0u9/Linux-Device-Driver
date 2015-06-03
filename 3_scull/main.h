@@ -33,7 +33,7 @@ struct store_block {
 
 struct scull_dev {
 	struct list_head list;		//list of storage blocks
-	atomic_t list_entry_counter;		//record how many blocks now in the list
+	atomic_t list_entry_counter;	//record how many blocks now in the list
 	atomic_t open_counter;
 	struct mutex mutex;
 	struct cdev cdev;
