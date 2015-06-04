@@ -18,6 +18,7 @@ struct file_operations echo_ops = {
 	.owner = THIS_MODULE,
 	.open = echo_open,
 	.write = echo_write,
+	.read = echo_read,
 };
 
 module_param(echo_buf_size, int, S_IRUGO);
@@ -46,7 +47,8 @@ static int __init module_start(void)
 	for (i = 0; i < ECHO_NR_DEVS; ++i) {
 		devno = MKDEV(echo_major, echo_minor + i);
 		atomic_set(&(echo_devs + i)->opt_counter, 0);
-		(echo_devs + i)->data_len = echo_buf_size;
+		(echo_devs + i)->data_len = 0;
+		(echo_devs + i)->data_max_len = echo_buf_size;
 		(echo_devs + i)->data = (char *)
 		    kmalloc(echo_buf_size * sizeof(char), GFP_KERNEL);
 		memset((echo_devs + i)->data, 0, echo_buf_size);

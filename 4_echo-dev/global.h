@@ -15,11 +15,12 @@
 #define ECHO_NR_DEVS	4
 #define ECHO_MAJOR	0
 #define ECHO_MINOR	0
-#define ECHO_BUF_SIZE	512
+#define ECHO_BUF_SIZE	8
 
 struct echo_dev {
 	atomic_t opt_counter;
 	int data_len;
+	int data_max_len;
 	char *data;
 	struct mutex mutex;
 	struct cdev cdev;

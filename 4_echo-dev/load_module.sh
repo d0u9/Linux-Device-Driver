@@ -1,7 +1,7 @@
 #! /bin/sh
 module="echo-dev"
 device="echo"
-mode="664"
+mode="666"
 
 /sbin/insmod ./$module.ko $* || exit 1
 
