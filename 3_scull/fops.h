@@ -7,5 +7,6 @@ extern ssize_t scull_read(struct file *filp, char __user *buff, size_t count,
 	loff_t *offp);
 extern ssize_t scull_write(struct file *filp, const char __user *buff, size_t count,
 	loff_t *offp);
+extern void scull_trim(struct scull_dev *dev);
 
 #endif

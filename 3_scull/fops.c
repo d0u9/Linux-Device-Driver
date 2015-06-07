@@ -10,12 +10,10 @@
 #include "main.h"
 #include "fops.h"
 
-static int scull_trim(struct scull_dev *dev);
 
 int scull_open(struct inode *inode, struct file *filp)
 {
 	struct scull_dev *dev;
-	int err = 0;
 	PDEBUG("`OPEN` is invoked\n");
 
 	dev = container_of(inode->i_cdev, struct scull_dev, cdev);
@@ -23,10 +21,13 @@ int scull_open(struct inode *inode, struct file *filp)
 	atomic_inc(&dev->open_counter);
 
 	if ((filp->f_flags & O_ACCMODE) == O_WRONLY) {
-		err = scull_trim(dev);
-		if (err)
-			return err;
+		if (mutex_lock_interruptible(&dev->mutex))
+			return -ERESTARTSYS;
+		scull_trim(dev);
+		mutex_unlock(&dev->mutex);
 	}
+
+	PDEBUG("`OPEN` finished\n");
 	return 0;
 }
 
@@ -41,38 +42,47 @@ ssize_t scull_read(struct file *filp, char __user *buff, size_t count,
 {
 	struct scull_dev *dev = filp->private_data;
 	struct store_block *cur = NULL;
-	int block_index = 0, pos_in_block = 0;
-	int need_to_read = 0;
-	ssize_t retval = 0;
+	int target_block = 0, target_pos = 0;
+	int retval = 0;
+
+	PDEBUG("`Read` invoked\n");
+
+	target_block = *f_pos / SCULL_BUFF_SIZE;
+	target_pos = *f_pos %SCULL_BUFF_SIZE;
 
 	if (mutex_lock_interruptible(&dev->mutex))
-		return -ERESTARTSYS;
+	    return -ERESTARTSYS;
 
-	block_index = (long) *f_pos / SCULL_BUFF_SIZE + 1;
-	pos_in_block = (long) *f_pos % SCULL_BUFF_SIZE;
-
-	if (block_index > atomic_read(&dev->list_entry_counter))
-		return 0;
-
-	need_to_read = (pos_in_block + count) > SCULL_BUFF_SIZE ? 
-		SCULL_BUFF_SIZE : count;
-	PDEBUG("Need to read %d bytes\n", need_to_read);
+	if (target_block >= dev->list_entry_counter) {
+		retval = 0;
+		goto out;
+	}
 
 	list_for_each_entry(cur, &dev->list, list) {
-		if (!(--block_index))
+		if (!(target_block--))
 			break;
 	}
 
-	if (copy_to_user(buff, cur->data + pos_in_block, need_to_read)) {
-	    retval = -EFAULT;
-	    goto out;
+	if (target_pos >= cur->pos) {
+		retval = 0;
+		goto out;
 	}
 
-	*f_pos += need_to_read;
-	retval = need_to_read;
+	if (count > cur->pos)
+		count = cur->pos;
+	PDEBUG("read %d bytes\n", count);
+
+	if (copy_to_user(buff, cur->data, count)) {
+		retval = EFAULT;
+		goto out;
+	}
+
+	retval = count;
+	*f_pos += count;
 
 out:
 	mutex_unlock(&dev->mutex);
+	PDEBUG("`Read` Finished\n");
 	return retval;
 }
 
@@ -81,63 +91,65 @@ ssize_t scull_write(struct file *filp, const char __user *buff, size_t count,
 {
 	struct scull_dev *dev = filp->private_data;
 	struct store_block *cur_block = NULL;
-	int block_index = 0, pos_in_block = 0, blocks = 0;
-	int need_to_write = 0;
-	ssize_t retval = -ENOMEM;
+	int retval = -ENOMEM;
+	int target_block = 0, target_pos = 0;
+	PDEBUG("`write` invoked\n");
 
+	target_block = *f_pos / SCULL_BUFF_SIZE;
+	target_pos = *f_pos % SCULL_BUFF_SIZE;
+
+	PDEBUG("target block %d, Now, there are %d blocks in\n",
+		target_block, dev->list_entry_counter);
 	if (mutex_lock_interruptible(&dev->mutex))
 		return -ERESTARTSYS;
-
-	block_index = (long) *f_pos / SCULL_BUFF_SIZE + 1;
-	pos_in_block = (long) *f_pos % SCULL_BUFF_SIZE;
-	blocks = atomic_read(&dev->list_entry_counter);
-
-	if (pos_in_block == 0) {
-		PDEBUG("Need to create a new block\n");
+	
+	while (target_block >= dev->list_entry_counter) {
 		cur_block = (struct store_block *)
 			kmalloc(sizeof(*cur_block), GFP_KERNEL);
-		memset(cur_block->data, 0, SCULL_BUFF_SIZE);
+		PDEBUG("Create a new block!\n");
+		if (!cur_block)
+			goto out;
+		memset(cur_block, 0, sizeof(*cur_block));
 		INIT_LIST_HEAD(&cur_block->list);
 		list_add_tail(&cur_block->list, &dev->list);
-		atomic_inc(&dev->list_entry_counter);
-	} else {
-		PDEBUG("Do not need to create a new block\n");
-		list_last_entry(&cur_block->list, struct store_block, list);
+		dev->list_entry_counter++;
 	}
+	cur_block = list_last_entry(&dev->list, struct store_block, list);
 
-	need_to_write = ((SCULL_BUFF_SIZE - pos_in_block) < count) ?
-			(SCULL_BUFF_SIZE - pos_in_block) : count;
-	PDEBUG("Prepare to write %d bytes to file\n", need_to_write);
+		
+	if (count > SCULL_BUFF_SIZE - target_pos)
+		count = SCULL_BUFF_SIZE - target_pos;
+	PDEBUG("SCULL_BUFF_SIZE = %d, target_pos = %d\n", SCULL_BUFF_SIZE, target_pos);
+	PDEBUG("write %d bytes\n", count);
 
-	if (copy_from_user(cur_block->data + pos_in_block, buff, need_to_write)) {
+	if (copy_from_user(cur_block->data + target_pos, buff, count)) {
 		retval = -EFAULT;
 		goto out;
 	}
 
-	*f_pos += need_to_write;
-	retval = need_to_write;
+	retval = count;
+	cur_block->pos += count;
+	*f_pos += count;
 
 out:
 	mutex_unlock(&dev->mutex);
+	PDEBUG("Write finished\n");
 	return retval;
 }
 
-static int scull_trim(struct scull_dev *dev)
+void scull_trim(struct scull_dev *dev)
 {
-	struct store_block *tmp = NULL, *cur = NULL;
-
-	if (mutex_lock_interruptible(&dev->mutex))
-		return -ERESTARTSYS;
-
+	struct store_block *cur = NULL, *tmp = NULL;
+	PDEBUG("Start trim\n");
 	list_for_each_entry_safe(cur, tmp, &dev->list, list) {
 		list_del(&cur->list);
+		PDEBUG("TrimA\n");
+		memset(cur, 0, sizeof(*cur));
+		PDEBUG("TrimB\n");
 		kfree(cur);
+		PDEBUG("TrimC\n");
 	}
-
-	INIT_LIST_HEAD(&dev->list);
-	atomic_set(&dev->list_entry_counter, 0);
-	mutex_unlock(&dev->mutex);
-
-	return 0;
+	dev->list_entry_counter = 0;
+	PDEBUG("Finished Trim\n");
 }
 

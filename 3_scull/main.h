@@ -23,18 +23,23 @@
 #endif
 
 #ifndef SCULL_BUFF_SIZE
-#define SCULL_BUFF_SIZE	4096
+#define SCULL_BUFF_SIZE	8
+#endif
+
+#ifndef MUDULE_NAME
+#define MODULE_NAME	"scull"
 #endif
 
 struct store_block {
 	struct list_head list;
+	int pos;
 	char data[SCULL_BUFF_SIZE];
 };
 
 struct scull_dev {
-	struct list_head list;		//list of storage blocks
-	atomic_t list_entry_counter;	//record how many blocks now in the list
 	atomic_t open_counter;
+	struct list_head list;		//list of storage blocks
+	int list_entry_counter;		//record how many blocks now in the list
 	struct mutex mutex;
 	struct cdev cdev;
 };
