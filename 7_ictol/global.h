@@ -1,7 +1,9 @@
 #ifndef _GLOBAL_H
 #define _GLOBAL_H
 
-#define MODULE_NAME "ioctl"
+#define MODULE_NAME	"ioctl"
+#define BUFF_SIZE	4096
+#define DEV_NR		1
 
 #undef PDEBUG
 #ifdef ENABLE_DEBUG
