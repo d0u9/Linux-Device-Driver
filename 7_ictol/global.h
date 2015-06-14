@@ -11,7 +11,7 @@
 
 #define IOCTL_RESET	_IO(IOCTL_IOC_MAGIC, 0)
 #define IOCTL_LOOPNR	_IOWR(IOCTL_IOC_MAGIC, 1, int)
-#define IOCTL_STR	_IOWR(IOCTL_IOC_MAGIC, 2, int)
+#define IOCTL_STR	_IOW(IOCTL_IOC_MAGIC, 2, int)
 
 #define IOCTL_MAXNR	2
 
@@ -27,5 +27,10 @@
 #else
 #    define PDEBUG(fmt, args...)
 #endif
+
+struct ioctl_str {
+	int str_len;
+	char *str;
+};
 
 #endif

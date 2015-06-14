@@ -116,13 +116,16 @@ static ssize_t ioctl_read(struct file *filp, char __user *buff, size_t cout,
 
 static long ioctl_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 {
-	int err = 0, tmp;
+	int err = 0;
 	long retval = 0;
+	struct ioctl_str str_ioctl;
+	char *tmp_str = NULL;
 
 	PDEBUG("ioctl invoked!\n");
-	PDEBUG("IOCTL_RESET = %d,"
-		"IOCTL_LOOPNR = %d,\n"
-		"IOCTL_STR = %d,\n", IOCTL_RESET, IOCTL_LOOPNR, IOCTL_STR);
+	PDEBUG("IOCTL_RESET = %x,\n"
+		"IOCTL_LOOPNR = %lx,\n"
+		"IOCTL_STR = %lx,\n", IOCTL_RESET, IOCTL_LOOPNR, IOCTL_STR);
+	PDEBUG("cmd = %x\n", cmd);
 	if (_IOC_TYPE(cmd) != IOCTL_IOC_MAGIC) {
 		PDEBUG("CMD error!\n");
 		return -ENOTTY;
@@ -150,9 +153,45 @@ static long ioctl_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		str_len = DEFAULT_STR_LEN;
 		break;
 
+	case IOCTL_LOOPNR:
+		PDEBUG("ioctl cmd -> ioctl_loopnr\n");
+
+		//permission check
+		if (!capable(CAP_SYS_ADMIN))
+			return -EPERM;
+		
+		retval = print_counter;
+		print_counter = arg;
+		PDEBUG("New print_counter = %d\n", print_counter);
+		break;
+
+	case IOCTL_STR:
+		PDEBUG("ioctl cmd -> ioctl_str\n");
+		if (copy_from_user(&str_ioctl, (void __user *)arg,
+					sizeof(struct ioctl_str)))
+		{
+			PDEBUG("Copy error!\n");
+			return -EFAULT;
+		}
+		PDEBUG("new str_len -> %d", str_ioctl.str_len);
+		tmp_str = kmalloc(str_ioctl.str_len, GFP_KERNEL);
+		if (copy_from_user(tmp_str, (void __user *)str_ioctl.str,
+				str_ioctl.str_len))
+		{
+			PDEBUG("Second copy error!\n");
+			kfree(tmp_str);
+			return -EFAULT;
+		}
+		memset(internal_buffer, 0, BUFF_SIZE);
+		memcpy(internal_buffer, tmp_str, str_ioctl.str_len);
+		str_len = str_ioctl.str_len;
+		break;
+
+
 	default:
 		return -ENOTTY;
 	}
 
+	PDEBUG("FInished `ioctl`\n");
 	return retval;
 }
