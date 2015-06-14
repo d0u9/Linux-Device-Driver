@@ -2,8 +2,18 @@
 #define _GLOBAL_H
 
 #define MODULE_NAME	"ioctl"
-#define BUFF_SIZE	4096
+#define DEFAULT_STR	"Hello World!\n"
+#define DEFAULT_STR_LEN	sizeof(DEFAULT_STR)
 #define DEV_NR		1
+#define BUFF_SIZE	4096
+
+#define IOCTL_IOC_MAGIC	'd'
+
+#define IOCTL_RESET	_IO(IOCTL_IOC_MAGIC, 0)
+#define IOCTL_LOOPNR	_IOWR(IOCTL_IOC_MAGIC, 1, int)
+#define IOCTL_STR	_IOWR(IOCTL_IOC_MAGIC, 2, int)
+
+#define IOCTL_MAXNR	2
 
 #undef PDEBUG
 #ifdef ENABLE_DEBUG
