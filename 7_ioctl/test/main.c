@@ -9,6 +9,12 @@
 #define NEW_STR		"Hello, Linux!!\n"
 #define NEW_STR_LEN	sizeof(NEW_STR)
 
+#define IOCTL_IOC_MAGIC	'd'
+
+#define IOCTL_RESET	_IO(IOCTL_IOC_MAGIC, 0)
+#define IOCTL_LOOPNR	_IOWR(IOCTL_IOC_MAGIC, 1, int)
+#define IOCTL_STR	_IOW(IOCTL_IOC_MAGIC, 2, int)
+
 struct ioctl_str {
 	int str_len;
 	char *str;
@@ -26,9 +32,9 @@ int main(int argc, char *argv[])
 	};
 
 	int fd = open("/dev/ioctl-test", O_RDONLY);
-	/*int err = ioctl(fd, 25600);	//reset*/
-	/*int err = ioctl(fd, 0xc0046401, );*/
-	int err = ioctl(fd, 0x40046402, &str_io);
+	/*int err = ioctl(fd, IOCTL_RESET);	//reset*/
+	/*int err = ioctl(fd, IOCTL_LOOPNR, 5);*/
+	int err = ioctl(fd, IOCTL_STR, &str_io);
 	printf("retval = %d\n", err);
 
 	return 0;	
