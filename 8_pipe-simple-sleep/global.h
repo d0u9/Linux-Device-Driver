@@ -12,17 +12,18 @@
 #	define PDEBUG(fmt, args...)
 #endif
 
-#define BUFF_SIZE	512
+#define BUFF_SIZE	12
 #define PIPE_DEV_NR	3
 
 struct buff_t {
 	int	read_pos;
 	int	write_pos;
-	struct mutex mutex_r;
-	struct mutex mutex_w;
-	struct cdev dev;
+	int	size;
+	struct mutex mutex;
 	char	buff[BUFF_SIZE];
+	wait_queue_head_t read_queue;
+	wait_queue_head_t write_queue;
+	struct cdev dev;
 };
-
 
 #endif
