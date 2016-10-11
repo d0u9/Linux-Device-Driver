@@ -4,4 +4,5 @@ Examples of Linux Device Drivers
 ---
 
 # License
-![CC License](http://i.creativecommons.org/l/by-nc-sa/3.0/88x31.png)
+
+Linux-Device-Driver-3.18 by d0u9 is licensed under a [GNU General Public License, version 2](https://www.gnu.org/licenses/old-licenses/gpl-2.0.en.html).
