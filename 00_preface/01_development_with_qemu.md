@@ -192,6 +192,8 @@ environment.
    sleep 1
 
    setsid sh -c 'exec sh </dev/ttyS0 >/dev/ttyS0 2>&1'
+
+   EOF
    ```
 
    Note how we initiate the shell, if we simply write `exec /bin/sh` here, we
