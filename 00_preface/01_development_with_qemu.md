@@ -159,9 +159,10 @@ environment.
 
    # Place busybox in initramfs/bin
    cp busybox initramfs/bin
-   
+
    # Install busybox
    initramfs/bin/busybox --install initramfs/bin
+   initramfs/bin/busybox --install initramfs/sbin
    ```
 
 4. Compose init script
@@ -191,7 +192,9 @@ environment.
    # wait for NIC ready
    sleep 1
 
-   setsid sh -c 'exec sh </dev/ttyS0 >/dev/ttyS0 2>&1'
+   # make the new shell as a login shell with -l option
+   # only login shell read /etc/profile
+   setsid sh -c 'exec sh -l </dev/ttyS0 >/dev/ttyS0 2>&1'
 
    EOF
    ```
@@ -201,7 +204,20 @@ environment.
    Check [Busybox's FAQ](https://www.busybox.net/FAQ.html#job_control) for
    details.
 
-5. Create initramfs image.
+5. Add some necessary files
+
+   ```bash
+   cat << EOF > /etc/hosts
+   127.0.0.1    localhost
+   10.0.2.2     host_machine
+   EOF
+
+   cat << EOF > /etc/profile
+   alias ll='ls -l'
+   EOF
+   ```
+
+6. Create initramfs image.
 
    ```bash
    cd initramfs
@@ -252,7 +268,7 @@ filesystem is fast ant convenient.
    Add the following line in `initramfs/init` right after NIC ready:
 
    ```bash
-   mount -t nfs -o nolock 10.0.2.2:/path/to/working/directory /mnt
+   mount -t nfs -o nolock host_machine:/path/to/working/directory /mnt
    ```
 
 # Enjoy the happy life with QEMU
