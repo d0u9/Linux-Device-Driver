@@ -173,21 +173,24 @@ environment.
    ```bash
    touch initramfs/init
    chmod +x initramfs/init
-   cat initramfs/init << EOF
+
+   cat << EOF > initramfs/init
    #!/bin/busybox sh
 
    # Mount the /proc and /sys filesystems.
    mount -t proc none /proc
    mount -t sysfs none /sys
-   mknod -m 666 /dev/ttyS0 c 4 64
-   
+
    # Boot real things.
-   
+
+   # NIC up
    ip link set eth0 up
    ip addr add 10.0.2.15/24 dev eth0
-   
    ip link set lo up
-   
+
+   # wait for NIC ready
+   sleep 1
+
    setsid sh -c 'exec sh </dev/ttyS0 >/dev/ttyS0 2>&1'
    ```
 
@@ -209,9 +212,45 @@ environment.
    ```bash
    qemu-system-x86_64 -enable-kvm \
                       -kernel linux-4.9.30/arch/x86_64/boot/bzImage \
-		      -initrd initramfs.cpio.gz \
-		      -append 'console=ttyS0' \
-		      -nographic
+                      -initrd initramfs.cpio.gz \
+                      -append 'console=ttyS0' \
+                      -nographic
+   ```
+
+   Press `<C-A> x` to terminate QEMU.
+
+# Setup NFS server
+
+Instead of fetching compiled binary file everytime after compiling, using NFS
+filesystem is fast ant convenient.
+
+1. Install NFS server.
+
+   On Ubuntu/Debian Host:
+
+   ```bash
+   sudo apt-get install nfs-kernel-server
+   ```
+
+2. Export our working directory.
+
+   Appending the following contents to `/etc/exports`:
+
+   ```bash
+   cat << EOF >> /etc/exports
+   /path/to/working/directory   127.0.0.1(insecure,rw,sync,no_root_squash)
+   EOF
+   ```
+
+   Note that the `insecure` option is compulsory or `refused mount request from
+   127.0.0.1 for /xxxx (/xxx): illegal port xxxx` error will be reported.
+
+3. Auto mount NFS when booting.
+
+   Add the following line in `initramfs/init` right after NIC ready:
+
+   ```bash
+   mount -t nfs -o nolock 10.0.2.2:/path/to/working/directory /mnt
    ```
 
 # Enjoy the happy life with QEMU
@@ -220,6 +259,18 @@ environment.
 
 # Reference
 
+1. [https://landley.net/writing/rootfs-howto.html][1]
+2. [http://jootamam.net/howto-initramfs-image.htm][2]
+3. [https://wiki.gentoo.org/wiki/Custom_Initramfs][3]
+4. [http://www.nathanfriend.co.uk/nfs-refused-mount-illegal-port/][4]
+5. [https://busybox.net/FAQ.html][5]
+
+
+[1]: https://landley.net/writing/rootfs-howto.html
+[2]: http://jootamam.net/howto-initramfs-image.htm
+[3]: https://wiki.gentoo.org/wiki/Custom_Initramfs
+[4]: http://www.nathanfriend.co.uk/nfs-refused-mount-illegal-port/
+[5]: https://busybox.net/FAQ.html
 
 ---
 
