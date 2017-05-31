@@ -10,4 +10,7 @@ parallel port, are rarely seen in nowadays computer, and some kernel APIs
 have varied a lot apart from kernel 2.6. So I modify some examples to best
 suit for cutting edge hardwares.
 
+---
+
+### ¶ The end
 
