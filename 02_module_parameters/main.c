@@ -9,7 +9,7 @@ module_param(howmany, int,   S_IRUGO);
 module_param(whom,    charp, S_IRUGO);
 
 static
-int __init module_start(void)
+int __init m_init(void)
 {
 	printk(KERN_WARNING "parameters test module is loaded\n");
 
@@ -20,13 +20,13 @@ int __init module_start(void)
 }
 
 static
-void __exit module_end(void)
+void __exit m_exit(void)
 {
 	printk(KERN_WARNING "parameters test module is unloaded\n");
 }
 
-module_init(module_start);
-module_exit(module_end);
+module_init(m_init);
+module_exit(m_exit);
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("d0u9");
