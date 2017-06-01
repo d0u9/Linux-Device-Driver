@@ -17,4 +17,4 @@ endif
 
 .PHONY: clean
 clean:
-	rm -fr *.o *~ core .depend .*.cmd *.ko *.mod.c .tmp_versions *.order *.symvers
+	$(MAKE) -C $(KERNELDIR) M=$(PWD) clean
