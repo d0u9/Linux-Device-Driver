@@ -86,7 +86,7 @@ busybox contains a telnet server, i.e `telnetd`. We cannot directly use
    sleep 0.5
 
    # mount our working directory
-   mount -t nfs -o nolock host_machine:/home/doug/Linux_Kernel/Linux-Device-Driver /mnt
+   mount -t nfs -o nolock host_machine:/nfs/mapped_dir /mnt
 
    # Start telnetd
    telnetd -l /bin/sh

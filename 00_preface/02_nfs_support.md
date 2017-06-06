@@ -68,7 +68,7 @@ is a better choice to share common file accross the host and the guest.
    sleep 0.5
 
    # mount our working directory
-   mount -t nfs -o nolock host_machine:/home/doug/Linux_Kernel/Linux-Device-Driver /mnt
+   mount -t nfs -o nolock host_machine:/nfs/mapped_dir /mnt
 
    # make the new shell as a login shell with -l option
    # only login shell read /etc/profile
