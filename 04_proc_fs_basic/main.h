@@ -19,11 +19,19 @@
 #endif
 
 #ifndef SUB_DIR_NAME
-#define SUB_DIR_NAME	"proc_demo"
+#define SUB_DIR_NAME		"proc_demo"
 #endif
 
 #ifndef PROC_FS_NAME
-#define PROC_FS_NAME	"proc_fs"
+#define PROC_FS_NAME		"proc_fs"
+#endif
+
+#ifndef PROC_FS_NAME_MUL
+#define PROC_FS_NAME_MUL	"proc_fs_mul"
+#endif
+
+#ifndef PRINT_NR
+#define PRINT_NR		3
 #endif
 
 #endif
