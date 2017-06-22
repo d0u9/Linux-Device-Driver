@@ -41,7 +41,7 @@ are set, the current running kernel will be built against.
 Copy **proc_fs_basic.ko** file to the target machine, then run:
 
 ```bash
-insmod sh load_module.sh
+insmod proc_fs_basic.ko
 ```
 
 ## test the module
