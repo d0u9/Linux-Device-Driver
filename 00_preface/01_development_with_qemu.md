@@ -95,10 +95,9 @@ environment.
    Disable IPv6 support:
 
    ```
-   Device Drivers  --->
-     [*] Networking support  --->
-       Networking options  --->
-         < >   The IPv6 protocol  ----
+    [*] Networking support  --->
+      Networking options  --->
+        < >   The IPv6 protocol  ----
    ```
 
 5. Compile the Kernel.
