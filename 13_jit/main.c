@@ -114,5 +114,5 @@ module_exit(m_exit);
 
 MODULE_AUTHOR("d0u9");
 MODULE_LICENSE("GPL");
-MODULE_DESCRIPTION("");
+MODULE_DESCRIPTION("Delay methods in Linux kernel.");
 
