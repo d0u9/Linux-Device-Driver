@@ -138,6 +138,9 @@ environment.
 
    # Copy necessary device files from host
    cp -a /dev/{null,console,tty,loop0} initramfs/dev/
+
+   # Create necessary device files
+   mknod initramfs/dev/parport0 c 99 0
    ```
 
 3. Download busybox
