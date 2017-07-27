@@ -22,7 +22,8 @@ are set, the current running kernel will be built against.
 
 ## Usage
 
-Copy **proc_fs_basic.ko** file to the target machine, then run:
+Copy **completion.ko** and **load_module.sh** file to the target machine,
+then run:
 
 ```bash
 ./load_module.sh
