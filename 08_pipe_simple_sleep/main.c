@@ -91,6 +91,6 @@ module_exit(m_exit);
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("d0u9");
-MODULE_DESCRIPTION("A pipe like device to illustrate the skill of how to put
-		    the read/write process into sleep");
+MODULE_DESCRIPTION("A pipe like device to illustrate the skill of how to put"
+		   "the read/write process into sleep");
 
