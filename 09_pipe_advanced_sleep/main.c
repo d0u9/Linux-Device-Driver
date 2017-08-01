@@ -91,7 +91,7 @@ module_exit(m_exit);
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("d0u9");
-MODULE_DESCRIPTION("A pipe like device in which the advancded sleep skill is
-		    demostrated.");
+MODULE_DESCRIPTION("A pipe like device in which the advancded sleep skill is"
+		   "demostrated.");
 
 
