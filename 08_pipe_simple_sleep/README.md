@@ -31,11 +31,11 @@ sh load_module.sh
 
 ## test the module
 
-Read the device files named as `/dev/pipe_advanced_sleepN` via any Linux tools
+Read the device files named as `/dev/pipe_simple_sleepN` via any Linux tools
 you favoured. For example, here we use **cat**:
 
 ```
-cat /dev/pipe_advanced_sleep0
+cat /dev/pipe_simple_sleep0
 ```
 
 The process of **cat** command will be blocked until something is writen into
@@ -45,7 +45,7 @@ Now, open another terminal via telnet, and write something to this device file.
 Again, use any tools you favoured. We use **echo** here to demonstrate.
 
 ```
-echo "hello world!" > /dev/pipe_advanced_sleep0
+echo "hello world!" > /dev/pipe_simple_sleep0
 ```
 
 After successfully executing the command, the previous **cat** process will be
