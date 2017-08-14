@@ -49,7 +49,7 @@ echo "hello world!" > /dev/pipe_simple_sleep0
 ```
 
 After successfully executing the command, the previous **cat** process will be
-waken up and cant fetch the contents we just write. After print out the content
+waken up and fetch the contents we just write. After print out the content
 to the terminal, the **cat** process sleeps again to wait for more datas.
 
 ---
