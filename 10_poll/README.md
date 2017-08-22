@@ -11,9 +11,9 @@ process and tell it what happlend.
 In this example, we implement a simple char device to test our poll ability.
 After the module is successfully loaded, a timer will be used to control the
 device if it is readable of writable. Each time the timer is out, the read flag
-and write flag will be set to 1, and the value will be consumed when the device
-read or write this file. Here, we set the read flag each second, and set the
-write flag every two seconds.
+and write flag will be set to 1, and the value will be consumed when some
+processes read or write this device file. Here, we set the read flag each
+second elapsed, and set the write flag every two seconds elapsed.
 
 ## build the module
 
@@ -39,6 +39,33 @@ sh load_module.sh
 
 ## test the module
 
+After successfully load the driver, simply run the executable **poll.out** in
+the **test** directory.
+
+Each time the file descriptor is writable, we write the current loop counter
+into the device file. Likewise, each time the file desciptor is readable, we
+read the content from it and print to the screen.
+
+As we described before, the file descriptor to the device file we opened will
+be readable every 1 second, and will be writable every 2 seconds.
+
+Sample output as below:
+
+```
+polling ...
+[3] read: Hello World!
+[3] write: Hello world! -> 4
+polling ...
+[3] read: Hello world! -> 4
+polling ...
+[3] read: Hello world! -> 4
+[3] write: Hello world! -> 2
+polling ...
+[3] read: Hello world! -> 2
+polling ...
+[3] read: Hello world! -> 2
+[3] write: Hello world! -> 0
+```
 
 ---
 
