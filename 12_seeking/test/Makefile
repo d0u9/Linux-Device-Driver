@@ -1,2 +1,2 @@
 all:
-	gcc --static -o seek.out seek.c
+	gcc --static -std=gnu99 -o seek.out seek.c

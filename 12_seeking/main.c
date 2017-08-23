@@ -40,6 +40,7 @@ int __init m_init(void)
 	}
 	seeking_major = MAJOR(devno);
 
+	// we initialize the internal buffer with DEC-HEX table.
 	memcpy(seeking_dev->buff, HEX_DICT, HEX_DICT_LEN);
 	mutex_init(&seeking_dev->mutex);
 	cdev_init(&seeking_dev->cdev, &fops);
