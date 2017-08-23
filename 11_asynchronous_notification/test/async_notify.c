@@ -35,11 +35,16 @@ int main(int argc, char **argv)
 	while(1) {
 		sleep(1);
 
-		if (!gotdata)
+		if (!gotdata) {
+			printf("no signal, continue!\n");
 			continue;
+		}
+		printf("signal is catched\n");
 		gotdata = 0;
 
 		count = read(fd, buffer, 4096);
 		printf("%s\n", buffer);
 	}
+
+	return 0;
 }
