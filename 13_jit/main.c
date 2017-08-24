@@ -64,7 +64,7 @@ int __init m_init(void)
 	printk(KERN_WARNING MODULE_NAME " is loaded\n");
 
 	opt = opts[i++] = new_opt(jit_currentime, NULL);
-	proc_create_data("currentime", 0, NULL, &proc_ops, opt);
+	proc_create_data("currenttime", 0, NULL, &proc_ops, opt);
 
 	opt = opts[i++] = new_opt(jit_fn, (void*)JIT_BUSY);
 	proc_create_data("jitbusy",   0, NULL, &proc_ops, opt);
