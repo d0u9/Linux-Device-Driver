@@ -39,6 +39,30 @@ then run:
 sh load_module.sh
 ```
 
+## test the module
+
+To test this kernel module, first compile and copy the test program loacated
+in **test** directory to the target machine. Then, after the module is
+successfully loaded, run the test program **async_notify.out**.
+
+The program **async_notify.out** registers the signal handler for SIGIO signal,
+which will be invoked when the file descriptor is notified. In the signal
+handler, we add 1 to the global variable each time the handler is invoked.
+The global variable will be checked in the loop in `main()` function, and set
+it to 0 if it is greater than 0. In this case, the `read()` function will be
+called on the file descriptor for read data from the valid file descriptor.
+
+Sample output is:
+
+```
+no signal, continue!;
+no signal, continue!;
+no signal, continue!;
+no signal, continue!;
+signal is catched
+Hello World!
+```
+
 ---
 
 ### ¶ The end
