@@ -19,8 +19,6 @@
 static long delay = 0;
 module_param(delay, long, 0);
 
-static DECLARE_WAIT_QUEUE_HEAD(jiq_wait);
-
 static struct jiq_dev *jiq_dev = NULL;
 
 static int jiq_print(struct jiq_dev *dev)
@@ -56,13 +54,11 @@ void jiq_print_wq_delayd(struct work_struct *work)
 {
 	struct jiq_dev *dev = container_of(work, struct jiq_dev, jiq_work_delay.work);
 
-	PDEBUG("---- %p\n", dev);
 	PDEBUG("%s() is invoked\n", __FUNCTION__);
 
 	if (!jiq_print(dev))
 		return;
 
-	PDEBUG("zzzzzzzzzzzzz %ld\n", dev->delay);
 	schedule_delayed_work(&dev->jiq_work_delay, dev->delay);
 }
 
@@ -237,12 +233,9 @@ int m_init(void)
 
 	proc_create_data("jiqwq", 0, NULL, &proc_ops, jiq_read_wq);
 	proc_create_data("jiqwqdelay", 0, NULL, &proc_ops, jiq_read_wq_delayed);
-	proc_create_data("jitimer", 0, NULL, &proc_ops, jiq_read_run_timer);
+	proc_create_data("jiqtimer", 0, NULL, &proc_ops, jiq_read_run_timer);
 	proc_create_data("jiqtasklet", 0, NULL, &proc_ops, jiq_read_tasklet);
-#if 0
 
-	create_proc_read_entry("jiqtasklet", 0, NULL, jiq_read_tasklet, NULL);
-#endif
 	return 0;
 }
 
@@ -253,7 +246,7 @@ void m_exit(void)
 
 	remove_proc_entry("jiqwq", NULL);
 	remove_proc_entry("jiqwqdelay", NULL);
-	remove_proc_entry("jitimer", NULL);
+	remove_proc_entry("jiqtimer", NULL);
 	remove_proc_entry("jiqtasklet", NULL);
 
 	kfree(jiq_dev);
