@@ -38,6 +38,35 @@ then run:
 sh load_module.sh
 ```
 
+## test the module
+
+In the **test** directory, we write a simple test program to test the
+functionality of the kernel driver.
+
+Build and copy the binary file to the target machine, run the test program
+in terminal to check the output.
+
+In this test program, we read the device file from offset 15 to offset 0, one
+byte per read, and print the char to the terminal:
+
+```
+15(dec) = F(hex)
+14(dec) = E(hex)
+13(dec) = D(hex)
+12(dec) = C(hex)
+11(dec) = B(hex)
+10(dec) = A(hex)
+9(dec) = 9(hex)
+8(dec) = 8(hex)
+7(dec) = 7(hex)
+6(dec) = 6(hex)
+5(dec) = 5(hex)
+4(dec) = 4(hex)
+3(dec) = 3(hex)
+2(dec) = 2(hex)
+1(dec) = 1(hex)
+0(dec) = 0(hex)
+```
 
 ---
 
