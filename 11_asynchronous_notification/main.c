@@ -18,6 +18,7 @@ static struct file_operations fops = {
 	.read  = async_notify_read,
 	.write = async_notify_write,
 	.fasync = async_notify_fasync,
+	.release = async_release,
 };
 
 static
