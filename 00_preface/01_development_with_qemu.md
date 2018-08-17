@@ -135,7 +135,7 @@ environment.
    mkdir -p initramfs/{bin,dev,etc,lib,lib64,mnt,proc,root,sbin,sys}
 
    # Copy necessary device files from host
-   cp -a /dev/{null,console,tty,loop0,ttyS0} initramfs/dev/
+   cp -a /dev/{null,console,tty,ttyS0} initramfs/dev/
 
    # Create necessary device files
    mknod initramfs/dev/parport0 c 99 0
@@ -154,11 +154,8 @@ environment.
    ```bash
    # Download pre-build busybox, you may build busybox manually according to
    # your own needs.
-   wget https://www.busybox.net/downloads/binaries/1.27.1-i686/busybox
-   chmod +x busybox
-
-   # Place busybox in initramfs/bin
-   cp busybox initramfs/bin
+   wget https://www.busybox.net/downloads/binaries/1.27.1-i686/busybox -O initramfs/bin/busybox
+   chmod +x initramfs/bin/busybox
 
    # Install busybox
    initramfs/bin/busybox --install initramfs/bin
@@ -208,23 +205,23 @@ environment.
 
    ```bash
    # name resolve
-   cat << EOF > etc/hosts
+   cat << EOF > initramfs/etc/hosts
    127.0.0.1    localhost
    10.0.2.2     host_machine
    EOF
 
    # common alias
-   cat << EOF > etc/profile
+   cat << EOF > initramfs/etc/profile
    alias ll='ls -l'
    EOF
 
    # busybox saves password in /etc/passwd directly, no /etc/shadow is needed.
-   cat << EOF > etc/passwd
+   cat << EOF > initramfs/etc/passwd
    root:x:0:0:root:/root:/bin/bash
    EOF
 
    # group file
-   cat << EOF > etc/group
+   cat << EOF > initramfs/etc/group
    root:x:0:
    EOF
    ```
