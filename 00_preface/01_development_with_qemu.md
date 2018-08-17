@@ -54,8 +54,8 @@ environment.
 
 4. Configure the kernel.
 
-   As [LFS](http://www.linuxfromscratch.org/lfs/view/stable/chapter08/\
-   kernel.html) says, "A good starting place for setting up the kernel
+   As [LFS](http://www.linuxfromscratch.org/lfs/view/stable/chapter08/kernel.html)
+   says, "A good starting place for setting up the kernel
    configuration is to run make defconfig, This will set the base
    configuration to a good state that takes your current system architecture 
    into account." We first set the kernel to the default configuartion, then
@@ -110,9 +110,7 @@ environment.
 
 1. what is initramfs
 
-   Except from [Linux kernel documentation](https://git.kernel.org/pub/scm/
-   linux/kernel/git/stable/linux-stable.git/tree/Documentation/filesystems/
-   ramfs-rootfs-initramfs.txt?h=v4.9.30):
+   Except from [Linux kernel documentation](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux-stable.git/tree/Documentation/filesystems/ramfs-rootfs-initramfs.txt?h=v4.9.30):
 
    > All 2.6 Linux kernels contain a gzipped "cpio" format archive, which is
    extracted into rootfs when the kernel boots up.  After extracting, the
@@ -137,7 +135,7 @@ environment.
    mkdir -p initramfs/{bin,dev,etc,lib,lib64,mnt,proc,root,sbin,sys}
 
    # Copy necessary device files from host
-   cp -a /dev/{null,console,tty,loop0} initramfs/dev/
+   cp -a /dev/{null,console,tty,loop0,ttyS0} initramfs/dev/
 
    # Create necessary device files
    mknod initramfs/dev/parport0 c 99 0
@@ -156,7 +154,7 @@ environment.
    ```bash
    # Download pre-build busybox, you may build busybox manually according to
    # your own needs.
-   wget https://www.busybox.net/downloads/binaries/1.26.2-i686/busybox
+   wget https://www.busybox.net/downloads/binaries/1.27.1-i686/busybox
    chmod +x busybox
 
    # Place busybox in initramfs/bin
@@ -210,23 +208,23 @@ environment.
 
    ```bash
    # name resolve
-   cat << EOF > /etc/hosts
+   cat << EOF > etc/hosts
    127.0.0.1    localhost
    10.0.2.2     host_machine
    EOF
 
    # common alias
-   cat << EOF > /etc/profile
+   cat << EOF > etc/profile
    alias ll='ls -l'
    EOF
 
    # busybox saves password in /etc/passwd directly, no /etc/shadow is needed.
-   cat << EOF > /etc/passwd
+   cat << EOF > etc/passwd
    root:x:0:0:root:/root:/bin/bash
    EOF
 
    # group file
-   cat << EOF > /etc/group
+   cat << EOF > etc/group
    root:x:0:
    EOF
    ```
