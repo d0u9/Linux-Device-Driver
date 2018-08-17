@@ -86,3 +86,10 @@ int async_notify_fasync(int fd, struct file *filp, int mode)
 	return fasync_helper(fd, filp, mode, &dev->async_queue);
 }
 
+int async_notify_release(struct inode *inode, struct file *filp)
+{
+	// remove the async_queue from the file
+	struct async_notify_dev *dev = filp->private_data;
+
+	return fasync_helper(-1, filp, 0, &dev->async_queue);
+}
