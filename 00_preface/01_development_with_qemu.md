@@ -100,6 +100,18 @@ environment.
         < >   The IPv6 protocol  ----
    ```
 
+   Enable parallel port support:
+   ```
+   Device Drivers  --->
+     <*> Parallel port support  --->
+     [*] Network device support  --->
+       <*>   PC-style hardware
+
+   Device Drivers  --->
+     Character devices  --->
+       <*> Parallel printer support
+   ```
+
 5. Compile the Kernel.
 
    ```bash
@@ -139,6 +151,7 @@ environment.
 
    # Create necessary device files
    mknod initramfs/dev/parport0 c 99 0
+   mknod initramfs/dev/lp0 c 6 0
    ```
 
 3. Download busybox
