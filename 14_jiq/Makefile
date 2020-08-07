@@ -15,3 +15,4 @@ endif
 clean:
 	$(MAKE) -C $(KERNELDIR) M=$(PWD) clean
 
+CFLAGS_main.o := -DDEBUG

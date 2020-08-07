@@ -36,12 +36,11 @@ int proc_release(struct inode *inode, struct file *filp)
 	return single_release(inode, filp);
 }
 
-static struct file_operations proc_ops = {
-	.owner   = THIS_MODULE,
-	.open    = proc_open,
-	.read    = seq_read,
-	.llseek  = seq_lseek,
-	.release = proc_release,
+static struct proc_ops proc_ops = {
+	.proc_open    = proc_open,
+	.proc_read    = seq_read,
+	.proc_lseek   = seq_lseek,
+	.proc_release = proc_release,
 };
 
 

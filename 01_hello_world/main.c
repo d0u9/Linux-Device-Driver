@@ -6,6 +6,8 @@ static
 int __init hello_init(void)
 {
 	printk(KERN_ALERT "Hello, world!\n");
+	pr_debug("This is a debug message!\n");
+	pr_err("This is a error message!\n");
 	return 0;
 }
 

@@ -14,7 +14,7 @@
 
 int poll_open(struct inode *inode, struct file *filp)
 {
-	PDEBUG("%s() is invoked\n", __FUNCTION__);
+	pr_debug("%s() is invoked\n", __FUNCTION__);
 
 	filp->private_data = container_of(inode->i_cdev, struct poll_dev, cdev);
 
@@ -27,7 +27,7 @@ ssize_t poll_read(struct file *filp, char __user *buff, size_t count,
 	int retval;
 	struct poll_dev *dev = filp->private_data;
 
-	PDEBUG("%s() is invoked\n", __FUNCTION__);
+	pr_debug("%s() is invoked\n", __FUNCTION__);
 
 	if (mutex_lock_interruptible(&dev->mutex))
 		return -ERESTARTSYS;
@@ -54,7 +54,7 @@ ssize_t poll_write(struct file *filp, const char __user *buff,
 	int retval;
 	struct poll_dev *dev = filp->private_data;
 
-	PDEBUG("%s() is invoked\n", __FUNCTION__);
+	pr_debug("%s() is invoked\n", __FUNCTION__);
 
 	if (mutex_lock_interruptible(&dev->mutex))
 		return -ERESTARTSYS;
@@ -81,7 +81,7 @@ unsigned int poll_poll(struct file *filp, poll_table *wait)
 	struct poll_dev *dev = filp->private_data;
 	unsigned int mask = 0;
 
-	PDEBUG("%s() is invoked\n", __FUNCTION__);
+	pr_debug("%s() is invoked\n", __FUNCTION__);
 
 	mutex_lock(&dev->mutex);
 
@@ -89,17 +89,17 @@ unsigned int poll_poll(struct file *filp, poll_table *wait)
 	poll_wait(filp, &dev->outq, wait);
 
 	if (atomic_dec_and_test(&dev->can_rd)) {
-		PDEBUG("Now fd can be read\n");
+		pr_debug("Now fd can be read\n");
 		mask |= POLLIN | POLLRDNORM;
 	}
 
 	if (atomic_dec_and_test(&dev->can_wr)) {
-		PDEBUG("Now fd can be written\n");
+		pr_debug("Now fd can be written\n");
 		mask |= (POLLOUT | POLLWRNORM);
 	}
 
 	mutex_unlock(&dev->mutex);
 
-	PDEBUG("return mask = 0x%x\n", mask);
+	pr_debug("return mask = 0x%x\n", mask);
 	return mask;
 }

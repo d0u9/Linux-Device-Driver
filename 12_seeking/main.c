@@ -28,14 +28,14 @@ int __init m_init(void)
 
 	seeking_dev = kmalloc(sizeof(struct seeking_dev), GFP_KERNEL);
 	if (!seeking_dev) {
-		PDEBUG("Cannot malloc memeory!\n");
+		pr_debug("Cannot malloc memeory!\n");
 		return -ENOMEM;
 	}
 	memset(seeking_dev, 0, sizeof(struct seeking_dev));
 
 	err = alloc_chrdev_region(&devno, seeking_minor, SEEKING_DEV_NR, MODULE_NAME);
 	if (err < 0) {
-		PDEBUG("Can't get major!\n");
+		pr_debug("Can't get major!\n");
 		goto on_error;
 	}
 	seeking_major = MAJOR(devno);
@@ -49,7 +49,7 @@ int __init m_init(void)
 	devno = MKDEV(seeking_major, seeking_minor);
 	err = cdev_add(&seeking_dev->cdev, devno, 1);
 	if (err) {
-		PDEBUG("Cannot add %s\n", MODULE_NAME);
+		pr_debug("Cannot add %s\n", MODULE_NAME);
 		goto on_error;
 	}
 

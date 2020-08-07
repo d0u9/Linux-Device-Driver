@@ -10,7 +10,7 @@
 
 int seeking_open(struct inode *inode, struct file *filp)
 {
-	PDEBUG("%s() is invoked\n", __FUNCTION__);
+	pr_debug("%s() is invoked\n", __FUNCTION__);
 
 	filp->private_data = container_of(inode->i_cdev, struct seeking_dev, cdev);
 
@@ -23,7 +23,7 @@ ssize_t seeking_read(struct file *filp, char __user *buff, size_t count,
 	struct seeking_dev *dev = filp->private_data;
 	int retval = 0;
 
-	PDEBUG("%s() is invoked\n", __FUNCTION__);
+	pr_debug("%s() is invoked\n", __FUNCTION__);
 
 	if (mutex_lock_interruptible(&dev->mutex))
 		return -ERESTARTSYS;
@@ -32,7 +32,7 @@ ssize_t seeking_read(struct file *filp, char __user *buff, size_t count,
 		count = HEX_DICT_LEN - *f_pos;
 
 	if (copy_to_user(buff, dev->buff + *f_pos, count)) {
-		PDEBUG("copy to user error!\n");
+		pr_debug("copy to user error!\n");
 		retval = -EFAULT;
 		goto copy_error;
 	}
@@ -50,7 +50,7 @@ loff_t seeking_llseek(struct file *filp, loff_t off, int whence)
 {
 	loff_t newpos;
 
-	PDEBUG("%s() is invoked\n", __FUNCTION__);
+	pr_debug("%s() is invoked\n", __FUNCTION__);
 
 	switch(whence) {
 	case 0: /* SEEK_SET */

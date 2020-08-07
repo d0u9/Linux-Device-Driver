@@ -20,25 +20,23 @@
 
 int jit_currentime(struct seq_file *m, void *p)
 {
-	struct timeval tv1;
-	struct timespec tv2;
+	struct timespec64 tv1, tv2;
 	unsigned long j1;
 	u64 j2;
 
-	PDEBUG("%s() is invoked\n", __FUNCTION__);
+	pr_debug("%s() is invoked\n", __FUNCTION__);
 
 	/* get them four */
 	j1 = jiffies;
 	j2 = get_jiffies_64();
-	do_gettimeofday(&tv1);
-	tv2 = current_kernel_time();
+	ktime_get_real_ts64(&tv1);
+	ktime_get_coarse_real_ts64(&tv2);
 
 	/* print */
-
 	seq_printf(m ,"0x%08lx 0x%016Lx %10i.%06i\n"
 		   "%41i.%09i\n",
 		   j1, j2,
-		   (int) tv1.tv_sec, (int) tv1.tv_usec,
+		   (int) tv1.tv_sec, (int) tv1.tv_nsec,
 		   (int) tv2.tv_sec, (int) tv2.tv_nsec);
 	return 0;
 }
@@ -49,7 +47,7 @@ int jit_fn(struct seq_file *m, void *p)
 	wait_queue_head_t wait;
 	extern int delay;
 
-	PDEBUG("%s() is invoked\n", __FUNCTION__);
+	pr_debug("%s() is invoked\n", __FUNCTION__);
 
 	init_waitqueue_head(&wait);
 
@@ -73,7 +71,7 @@ int jit_fn(struct seq_file *m, void *p)
 		schedule_timeout(delay);
 		break;
 	default:
-		PDEBUG("Known option\n");
+		pr_debug("Known option\n");
 	}
 
 	seq_printf(m, "%9li %9li\n", j0, j1);
@@ -94,12 +92,12 @@ struct jit_data {
 
 #define JIT_ASYNC_LOOPS 5
 
-void jit_timer_fn(unsigned long arg)
+void jit_timer_fn(struct timer_list *t)
 {
-	struct jit_data *data = (struct jit_data *)arg;
+	struct jit_data *data = from_timer(data, t, timer);
 	unsigned long j = jiffies;
 
-	PDEBUG("%s() is invoked\n", __FUNCTION__);
+	pr_debug("%s() is invoked\n", __FUNCTION__);
 
 	data->buf += sprintf(data->buf, "%9li  %3li     %i    %6i   %i   %s\n",
 			     j, j - data->prevjiffies, in_interrupt() ? 1 : 0,
@@ -123,7 +121,7 @@ int jit_timer(struct seq_file *m, void *p)
 	unsigned long j = jiffies;
 	int retval = 0;
 
-	PDEBUG("%s() is invoked\n", __FUNCTION__);
+	pr_debug("%s() is invoked\n", __FUNCTION__);
 
 	if (!(data = kmalloc(sizeof(struct jit_data), GFP_KERNEL)))
 		return -ENOMEM;
@@ -135,7 +133,7 @@ int jit_timer(struct seq_file *m, void *p)
 	memset(buf, 0, PAGE_SIZE);
 	buf2 = buf;
 
-	init_timer(&data->timer);
+	timer_setup(&data->timer, jit_timer_fn, 0);
 	init_waitqueue_head(&data->wait);
 
 	buf2 += sprintf(buf2, "   time   delta  inirq    pid   cpu command\n");
@@ -149,8 +147,6 @@ int jit_timer(struct seq_file *m, void *p)
 	data->loops = JIT_ASYNC_LOOPS;
 	
 	/* register the timer */
-	data->timer.data = (unsigned long)data;
-	data->timer.function = jit_timer_fn;
 	data->timer.expires = j + tdelay; /* parameter */
 	add_timer(&data->timer);
 
@@ -178,7 +174,7 @@ void jit_tasklet_fn(unsigned long arg)
 	struct jit_data *data = (struct jit_data *)arg;
 	unsigned long j = jiffies;
 
-	PDEBUG("%s() is invoked\n", __FUNCTION__);
+	pr_debug("%s() is invoked\n", __FUNCTION__);
 
 	data->buf += sprintf(data->buf, "%9li  %3li     %i    %6i   %i   %s\n",
 			     j, j - data->prevjiffies, in_interrupt() ? 1 : 0,
@@ -204,7 +200,7 @@ int jit_tasklet(struct seq_file *m, void *p)
 	long hi = (long)(m->private);
 	int retval = 0;
 
-	PDEBUG("%s() is invoked\n", __FUNCTION__);
+	pr_debug("%s() is invoked\n", __FUNCTION__);
 
 	if (!(data = kmalloc(sizeof(struct jit_data), GFP_KERNEL)))
 		return -ENOMEM;

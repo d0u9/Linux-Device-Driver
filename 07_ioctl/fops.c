@@ -13,7 +13,7 @@
 
 int ioctl_open(struct inode *inode, struct file *filp)
 {
-	PDEBUG("%s() is invoked\n", __FUNCTION__);
+	pr_debug("%s() is invoked\n", __FUNCTION__);
 
 	filp->private_data = container_of(inode->i_cdev, struct ioctl_dev, cdev);
 
@@ -27,7 +27,7 @@ ssize_t ioctl_read(struct file *filp, char __user *buff, size_t count,
 	int howmany = 0, offset = 0;
 	struct ioctl_dev *ioctl_dev = filp->private_data;
 
-	PDEBUG("%s() is invoked\n", __FUNCTION__);
+	pr_debug("%s() is invoked\n", __FUNCTION__);
 
 	if (ioctl_dev->buf_len == 0)
 		return 0;
@@ -35,7 +35,7 @@ ssize_t ioctl_read(struct file *filp, char __user *buff, size_t count,
 	howmany = *f_pos / ioctl_dev->buf_len;
 	offset = *f_pos % ioctl_dev->buf_len;
 
-	PDEBUG("howmany = %d, offset=%d, many=%d\n", howmany, offset, ioctl_dev->howmany);
+	pr_debug("howmany = %d, offset=%d, many=%d\n", howmany, offset, ioctl_dev->howmany);
 
 	if (howmany >= ioctl_dev->howmany)
 		return 0;
@@ -44,7 +44,7 @@ ssize_t ioctl_read(struct file *filp, char __user *buff, size_t count,
 		count = ioctl_dev->buf_len - offset;
 
 	if (copy_to_user(buff, ioctl_dev->buff, count)) {
-		PDEBUG("Error occurs shen copy to userspace\n");
+		pr_debug("Error occurs shen copy to userspace\n");
 		retval = -EFAULT;
 		return retval;
 	}
@@ -75,7 +75,7 @@ int ioctl_howmany(struct ioctl_dev *dev, unsigned long arg)
 	
 	retval = dev->howmany;
 	dev->howmany = arg;
-	PDEBUG("set howmany = %d\n", dev->howmany);
+	pr_debug("set howmany = %d\n", dev->howmany);
 
 	return retval;
 }
@@ -87,18 +87,18 @@ int ioctl_message(struct ioctl_dev *dev, void __user *arg)
 	struct ioctl_msg_arg msg_arg;
 
 	if (copy_from_user(&msg_arg, arg, sizeof(struct ioctl_msg_arg))) {
-		PDEBUG("copy arguments from user error\n");
+		pr_debug("copy arguments from user error\n");
 		retval = -EFAULT;
 		return retval;
 	}
 
 	if (msg_arg.len > BUFF_SIZE) {
-		PDEBUG("message length (%d bytes) exceeds the limit\n", msg_arg.len);
+		pr_debug("message length (%d bytes) exceeds the limit\n", msg_arg.len);
 		return -ENOMEM;
 	}
 
 	if (copy_from_user(dev->buff, (void __user *)msg_arg.msg, msg_arg.len)) {
-		PDEBUG("copy message from user error\n");
+		pr_debug("copy message from user error\n");
 		retval = -EFAULT;
 		return retval;
 	}
@@ -113,37 +113,34 @@ long ioctl_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	int err = 0, retval = 0;
 	struct ioctl_dev *dev = filp->private_data;
 
-	PDEBUG("%s() is invoked\n", __FUNCTION__);
+	pr_debug("%s() is invoked\n", __FUNCTION__);
 
 	if (_IOC_TYPE(cmd) != IOCTL_IOC_MAGIC) {
-		PDEBUG("ioctl command error\n");
+		pr_debug("ioctl command error\n");
 		return -ENOTTY;
 	}
 
 	if (_IOC_NR(cmd) > IOCTL_MAXNR) {
-		PDEBUG("Number of ioctl parameters error\n");
+		pr_debug("Number of ioctl parameters error\n");
 		return -ENOTTY;
 	}
 
-	if (_IOC_DIR(cmd) & _IOC_READ)
-		err = !access_ok(VERIFY_WRITE, (void __user *)arg, _IOC_SIZE(cmd));
-	else if (_IOC_DIR(cmd) & _IOC_WRITE)
-		err = !access_ok(VERIFY_READ, (void __user *)arg, _IOC_SIZE(cmd));
+	err = access_ok(arg, _IOC_SIZE(cmd));
 
 	if (err)
 		return -EFAULT;
 
 	switch (cmd) {
 	case IOCTL_RESET:
-		PDEBUG("ioctl -> cmd: reset\n");
+		pr_debug("ioctl -> cmd: reset\n");
 		retval = ioctl_reset(dev);
 		break;
 	case IOCTL_HOWMANY:
-		PDEBUG("ioctl -> cmd: set howmany\n");
+		pr_debug("ioctl -> cmd: set howmany\n");
 		retval = ioctl_howmany(dev, arg);
 		break;
 	case IOCTL_MESSAGE:
-		PDEBUG("ioctl -> cmd: set print message\n");
+		pr_debug("ioctl -> cmd: set print message\n");
 		retval = ioctl_message(dev, (void *__user)arg);
 		break;
 	default:

@@ -21,11 +21,11 @@ static struct file_operations fops = {
 };
 
 static
-void timer_fn(unsigned long arg)
+void timer_fn(struct timer_list *t)
 {
-	struct poll_dev *dev = (struct poll_dev*)arg;
+	struct poll_dev *dev = from_timer(dev, t, timer);
 
-	PDEBUG("%s() is invoked\n", __FUNCTION__);
+	pr_debug("%s() is invoked\n", __FUNCTION__);
 
 	++dev->timer_counter;
 
@@ -47,9 +47,7 @@ static
 void init_dev(struct poll_dev *dev)
 {
 	mutex_init(&dev->mutex);
-	init_timer(&dev->timer);
-	dev->timer.data = (unsigned long)dev;
-	dev->timer.function = timer_fn;
+	timer_setup(&dev->timer, timer_fn, 0);
 	dev->timer.expires = jiffies + TIMER_INTERVAL;
 
 	atomic_set(&dev->can_wr, 0);
@@ -77,14 +75,14 @@ int __init m_init(void)
 
 	poll_dev = kmalloc(sizeof(struct poll_dev), GFP_KERNEL);
 	if (!poll_dev) {
-		PDEBUG("Cannot alloc memory!\n");
+		pr_debug("Cannot alloc memory!\n");
 		return -ENOMEM;
 	}
 	memset(poll_dev, 0, sizeof(struct poll_dev));
 
 	err = alloc_chrdev_region(&devno, poll_minor, POLL_DEV_NR, MODULE_NAME);
 	if (err < 0) {
-		PDEBUG("Can't get major!\n");
+		pr_debug("Can't get major!\n");
 		goto on_error;
 	}
 	poll_major = MAJOR(devno);
@@ -95,7 +93,7 @@ int __init m_init(void)
 	devno = MKDEV(poll_major, poll_minor);
 	err = cdev_add(&poll_dev->cdev, devno, POLL_DEV_NR);
 	if (err) {
-		PDEBUG("Error when adding ioctl dev");
+		pr_debug("Error when adding ioctl dev");
 		goto on_error;
 	}
 

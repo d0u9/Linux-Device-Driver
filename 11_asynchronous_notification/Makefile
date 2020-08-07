@@ -14,3 +14,6 @@ endif
 .PHONY: clean
 clean:
 	$(MAKE) -C $(KERNELDIR) M=$(PWD) clean
+
+CFLAGS_main.o := -DDEBUG
+CFLAGS_fops.o := -DDEBUG

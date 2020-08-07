@@ -44,7 +44,7 @@ int __init m_init(void)
 	//Alloc device number
 	err = alloc_chrdev_region(&devno, scull_minor, SCULL_NR_DEVS, MODULE_NAME);
 	if (err < 0) {
-		PDEBUG("Cant't get major");
+		pr_debug("Cant't get major");
 		return err;
 	}
 	scull_major = MAJOR(devno);
@@ -52,7 +52,7 @@ int __init m_init(void)
 	for (int i = 0; i < SCULL_NR_DEVS; ++i) {
 		scull_dev[i] = kmalloc(sizeof(struct scull_dev), GFP_KERNEL);
 		if (!scull_dev[i]) {
-			PDEBUG("Error(%d): kmalloc failed on scull%d\n", err, i);
+			pr_debug("Error(%d): kmalloc failed on scull%d\n", err, i);
 			continue;
 		}
 
@@ -66,7 +66,7 @@ int __init m_init(void)
 		devno = MKDEV(scull_major, scull_minor + i);
 		err = cdev_add(&scull_dev[i]->cdev, devno, 1);
 		if (err) {
-			PDEBUG("Error(%d): Adding %s%d error\n", err, MODULE_NAME, i);
+			pr_debug("Error(%d): Adding %s%d error\n", err, MODULE_NAME, i);
 			kfree(scull_dev[i]);
 			scull_dev[i] = NULL;
 		}

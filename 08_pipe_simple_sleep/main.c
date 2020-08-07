@@ -44,7 +44,7 @@ int __init m_init(void)
 
 	err = alloc_chrdev_region(&devno, pipe_minor, PIPE_DEV_NR, MODULE_NAME);
 	if (err < 0) {
-		PDEBUG("Can't get major!\n");
+		pr_debug("Can't get major!\n");
 		return err;
 	}
 	pipe_major = MAJOR(devno);
@@ -52,7 +52,7 @@ int __init m_init(void)
 	for (int i = 0; i < PIPE_DEV_NR; ++i) {
 		pipe_dev[i] = kmalloc(sizeof(struct pipe_dev), GFP_KERNEL);
 		if (!pipe_dev[i]) {
-			PDEBUG("Error(%d): kmalloc failed on pipe%d\n", err, i);
+			pr_debug("Error(%d): kmalloc failed on pipe%d\n", err, i);
 			continue;
 		}
 
@@ -61,7 +61,7 @@ int __init m_init(void)
 		devno = MKDEV(pipe_major, pipe_minor + i);
 		err = cdev_add(&pipe_dev[i]->cdev, devno, 1);
 		if (err) {
-			PDEBUG("Error(%d): Adding pipe%d error\n", err, i);
+			pr_debug("Error(%d): Adding pipe%d error\n", err, i);
 			kfree(pipe_dev[i]);
 			pipe_dev[i] = NULL;
 		}

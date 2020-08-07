@@ -31,14 +31,14 @@ int __init m_init(void)
 
 	async_notify_dev = kmalloc(sizeof(struct async_notify_dev), GFP_KERNEL);
 	if (!async_notify_dev) {
-		PDEBUG("Cannot alloc memory!\n");
+		pr_debug("Cannot alloc memory!\n");
 		return -ENOMEM;
 	}
 	memset(async_notify_dev, 0, sizeof(struct async_notify_dev));
 
 	err = alloc_chrdev_region(&devno, async_notify_minor, ASYNC_NOTIFY_DEV_NR, MODULE_NAME);
 	if (err < 0) {
-		PDEBUG("Can't get major!\n");
+		pr_debug("Can't get major!\n");
 		goto on_error;
 	}
 	async_notify_major = MAJOR(devno);
@@ -50,7 +50,7 @@ int __init m_init(void)
 	devno = MKDEV(async_notify_major, async_notify_minor);
 	err = cdev_add(&async_notify_dev->cdev, devno, ASYNC_NOTIFY_DEV_NR);
 	if (err) {
-		PDEBUG("Error when adding ioctl dev");
+		pr_debug("Error when adding ioctl dev");
 		goto on_error;
 	}
 

@@ -15,7 +15,7 @@ int scull_open(struct inode *inode, struct file *filp)
 {
 	struct scull_dev *dev;
 
-	PDEBUG("%s() is invoked\n", __FUNCTION__);
+	pr_debug("%s() is invoked\n", __FUNCTION__);
 
 	dev = container_of(inode->i_cdev, struct scull_dev, cdev);
 	filp->private_data = dev;
@@ -32,7 +32,7 @@ int scull_open(struct inode *inode, struct file *filp)
 
 int scull_release(struct inode *inode, struct file *filp)
 {
-	PDEBUG("%s() is invoked\n", __FUNCTION__);
+	pr_debug("%s() is invoked\n", __FUNCTION__);
 	return 0;
 }
 
@@ -45,7 +45,7 @@ ssize_t scull_read(struct file *filp, char __user *buff, size_t count,
 	loff_t tblock = 0, toffset = 0;
 	struct list_head *plist = NULL;
 
-	PDEBUG("%s() is invoked\n", __FUNCTION__);
+	pr_debug("%s() is invoked\n", __FUNCTION__);
 
 	tblock = *f_pos / SCULL_BLOCK_SIZE;
 	toffset = *f_pos % SCULL_BLOCK_SIZE;
@@ -82,7 +82,7 @@ ssize_t scull_read(struct file *filp, char __user *buff, size_t count,
 
 end_of_file:
 cpy_user_error:
-	PDEBUG("RD pos = %lld, block = %lld, offset = %lld, read %lu bytes\n",
+	pr_debug("RD pos = %lld, block = %lld, offset = %lld, read %lu bytes\n",
 	       *f_pos, tblock, toffset, count);
 
 	mutex_unlock(&dev->mutex);
@@ -97,7 +97,7 @@ ssize_t scull_write(struct file *filp, const char __user *buff, size_t count,
 	loff_t retval = -ENOMEM;
 	loff_t tblock = 0, toffset = 0;
 
-	PDEBUG("%s() is invoked\n", __FUNCTION__);
+	pr_debug("%s() is invoked\n", __FUNCTION__);
 
 	tblock = *f_pos / SCULL_BLOCK_SIZE;
 	toffset = *f_pos % SCULL_BLOCK_SIZE;
@@ -132,7 +132,7 @@ ssize_t scull_write(struct file *filp, const char __user *buff, size_t count,
 
 malloc_error:
 cpy_user_error:
-	PDEBUG("WR pos = %lld, block = %lld, offset = %lld, write %lu bytes\n",
+	pr_debug("WR pos = %lld, block = %lld, offset = %lld, write %lu bytes\n",
 	       *f_pos, tblock, toffset, count);
 
 	mutex_unlock(&dev->mutex);
@@ -143,7 +143,7 @@ void scull_trim(struct scull_dev *dev)
 {
 	struct scull_block *cur = NULL, *tmp = NULL;
 
-	PDEBUG("%s() is invoked\n", __FUNCTION__);
+	pr_debug("%s() is invoked\n", __FUNCTION__);
 
 	list_for_each_entry_safe(cur, tmp, &dev->block_list, block_list) {
 		list_del(&cur->block_list);

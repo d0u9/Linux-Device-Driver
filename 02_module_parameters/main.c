@@ -11,10 +11,10 @@ module_param(whom,    charp, S_IRUGO);
 static
 int __init m_init(void)
 {
-	printk(KERN_WARNING "parameters test module is loaded\n");
+	pr_debug("parameters test module is loaded\n");
 
 	for (int i = 0; i < howmany; ++i) {
-		printk(KERN_WARNING "#%d Hello, %s\n", i, whom);
+		pr_info("#%d Hello, %s\n", i, whom);
 	}
 	return 0;
 }
@@ -22,7 +22,7 @@ int __init m_init(void)
 static
 void __exit m_exit(void)
 {
-	printk(KERN_WARNING "parameters test module is unloaded\n");
+	pr_debug("parameters test module is unloaded\n");
 }
 
 module_init(m_init);

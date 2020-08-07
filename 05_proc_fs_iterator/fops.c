@@ -31,16 +31,16 @@ static char *data[DATA_BLOCK_NUM] = {
 
 int proc_open(struct inode *inode, struct file *filp)
 {
-	PDEBUG("%s() is invoked\n", __FUNCTION__);
+	pr_debug("%s() is invoked\n", __FUNCTION__);
 	return seq_open(filp, &proc_seq_ops);
 }
 
 static void *proc_seq_start(struct seq_file *s_file, loff_t *pos)
 {
-	PDEBUG("%s() is invoked, pos=%lld\n", __FUNCTION__, *pos);
+	pr_debug("%s() is invoked, pos=%lld\n", __FUNCTION__, *pos);
 
 	if (*pos >= ARRAY_SIZE(data)) {
-		PDEBUG("position requested exceeds the maximum length\n");
+		pr_debug("position requested exceeds the maximum length\n");
 		return NULL;
 	}
 
@@ -49,11 +49,11 @@ static void *proc_seq_start(struct seq_file *s_file, loff_t *pos)
 
 static void *proc_seq_next(struct seq_file *s_file, void *v, loff_t *pos)
 {
-	PDEBUG("%s() is invoked, pos=%lld\n", __FUNCTION__, *pos);
+	pr_debug("%s() is invoked, pos=%lld\n", __FUNCTION__, *pos);
 
 	(*pos)++;
 	if (*pos >= ARRAY_SIZE(data)) {
-		PDEBUG("position requested exceeds the maximum length\n");
+		pr_debug("position requested exceeds the maximum length\n");
 		return NULL;
 	}
 
@@ -62,12 +62,12 @@ static void *proc_seq_next(struct seq_file *s_file, void *v, loff_t *pos)
 
 static void proc_seq_stop(struct seq_file *s_file, void *v)
 {
-	PDEBUG("%s() is invoked\n", __FUNCTION__);
+	pr_debug("%s() is invoked\n", __FUNCTION__);
 }
 
 static int proc_seq_show(struct seq_file *s_file, void *v)
 {
-	PDEBUG("%s() is invoked\n", __FUNCTION__);
+	pr_debug("%s() is invoked\n", __FUNCTION__);
 
 	seq_printf(s_file, "%p: %s\n", v, (char *)v);
 	return 0;

@@ -13,7 +13,7 @@
 
 int pipe_open(struct inode *inode, struct file *filp)
 {
-	PDEBUG("%s() is invoked\n", __FUNCTION__);
+	pr_debug("%s() is invoked\n", __FUNCTION__);
 
 	filp->private_data = container_of(inode->i_cdev, struct pipe_dev, cdev);
 
@@ -26,7 +26,7 @@ ssize_t pipe_read(struct file *filp, char __user * buff, size_t count,
 	int retval = 0;
 	struct pipe_dev *dev = filp->private_data;
 
-	PDEBUG("%s() is invoked\n", __FUNCTION__);
+	pr_debug("%s() is invoked\n", __FUNCTION__);
 
 	if (mutex_lock_interruptible(&dev->mutex))
 		return -ERESTARTSYS;
@@ -38,7 +38,7 @@ ssize_t pipe_read(struct file *filp, char __user * buff, size_t count,
 		if (filp->f_flags & O_NONBLOCK)
 			return -EAGAIN;
 
-		PDEBUG("read: process %d(%s) is going to sleep\n",
+		pr_debug("read: process %d(%s) is going to sleep\n",
 		       current->pid, current->comm);
 
 		if (wait_event_interruptible(dev->rd_queue, (dev->buff_len)))
@@ -52,12 +52,12 @@ ssize_t pipe_read(struct file *filp, char __user * buff, size_t count,
 		count = dev->buff_len - *f_pos;
 
 	if (copy_to_user(buff, dev->buff + *f_pos, count)) {
-		PDEBUG("copy to user error!\n");
+		pr_debug("copy to user error!\n");
 		retval = -EFAULT;
 		goto copy_error;
 	}
 
-	PDEBUG("read: f_pos=%lld, count=%lu, buff_len=%d\n",
+	pr_debug("read: f_pos=%lld, count=%lu, buff_len=%d\n",
 	       *f_pos, count, dev->buff_len);
 
 	*f_pos += count;
@@ -66,7 +66,7 @@ ssize_t pipe_read(struct file *filp, char __user * buff, size_t count,
 	if (*f_pos >= dev->buff_len) {
 		dev->buff_len = 0;
 		*f_pos = 0;
-		PDEBUG("read: process %d(%s) awakening the writers...\n",
+		pr_debug("read: process %d(%s) awakening the writers...\n",
 		       current->pid, current->comm);
 		wake_up_interruptible(&dev->wr_queue);
 	}
@@ -84,7 +84,7 @@ ssize_t pipe_write(struct file *filp, const char __user * buff,
 	int retval = count;
 	struct pipe_dev *dev = filp->private_data;
 
-	PDEBUG("%s() is invoked\n", __FUNCTION__);
+	pr_debug("%s() is invoked\n", __FUNCTION__);
 
 	if (mutex_lock_interruptible(&dev->mutex))
 		return -ERESTARTSYS;
@@ -95,7 +95,7 @@ ssize_t pipe_write(struct file *filp, const char __user * buff,
 		if (filp->f_flags & O_NONBLOCK)
 			return -EAGAIN;
 
-		PDEBUG("process %d(%s) is going to sleep\n",
+		pr_debug("process %d(%s) is going to sleep\n",
 		       current->pid, current->comm);
 
 		if (wait_event_interruptible(dev->wr_queue, (!dev->buff_len)))
@@ -109,12 +109,12 @@ ssize_t pipe_write(struct file *filp, const char __user * buff,
 		count = BUFF_SIZE - *f_pos;
 
 	if (copy_from_user(dev->buff + *f_pos, buff, count)) {
-		PDEBUG("write: copy to user error!\n");
+		pr_debug("write: copy to user error!\n");
 		retval = -EFAULT;
 		goto copy_error;
 	}
 
-	PDEBUG("write: f_pos=%lld, count=%lu, buff_len=%d\n",
+	pr_debug("write: f_pos=%lld, count=%lu, buff_len=%d\n",
 	       *f_pos, count, dev->buff_len);
 
 	// we have successfully write something in the buff
@@ -122,7 +122,7 @@ ssize_t pipe_write(struct file *filp, const char __user * buff,
 		dev->buff_len = count;
 		*f_pos = 0;
 
-		PDEBUG("write: process %d(%s) awakening the readers...\n",
+		pr_debug("write: process %d(%s) awakening the readers...\n",
 		       current->pid, current->comm);
 		wake_up_interruptible(&dev->rd_queue);
 	}

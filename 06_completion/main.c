@@ -16,7 +16,7 @@ static struct completion_dev completion_dev;
 static
 int completion_open(struct inode *inode, struct file *filp)
 {
-	PDEBUG("%s() is invoked\n", __FUNCTION__);
+	pr_debug("%s() is invoked\n", __FUNCTION__);
 
 	filp->private_data = container_of(inode->i_cdev,
 					  struct completion_dev, cdev);
@@ -29,11 +29,11 @@ ssize_t completion_read(struct file *filp, char __user *buf, size_t count, loff_
 {
 	struct completion_dev *dev = filp->private_data;
 
-	PDEBUG("%s() is invoked\n", __FUNCTION__);
+	pr_debug("%s() is invoked\n", __FUNCTION__);
 
-	PDEBUG("process %d(%s) is going to sleep\n", current->pid, current->comm);
+	pr_debug("process %d(%s) is going to sleep\n", current->pid, current->comm);
 	wait_for_completion(&dev->completion);
-	PDEBUG("awoken %d(%s)\n", current->pid, current->comm);
+	pr_debug("awoken %d(%s)\n", current->pid, current->comm);
 
 	return 0;
 }
@@ -44,9 +44,9 @@ ssize_t completion_write(struct file *filp, const char __user *buf, size_t count
 {
 	struct completion_dev *dev = filp->private_data;
 
-	PDEBUG("%s() is invoked\n", __FUNCTION__);
+	pr_debug("%s() is invoked\n", __FUNCTION__);
 
-	PDEBUG("process %d(%s) awakening the readers...\n",
+	pr_debug("process %d(%s) awakening the readers...\n",
 	       current->pid, current->comm);
 	complete(&dev->completion);
 
@@ -72,7 +72,7 @@ int __init m_init(void)
 
 	err = alloc_chrdev_region(&devno, completion_minor, 1, MODULE_NAME);
 	if (err < 0) {
-		PDEBUG("Cant't get major");
+		pr_debug("Cant't get major");
 		return err;
 	}
 	completion_major = MAJOR(devno);
@@ -82,7 +82,7 @@ int __init m_init(void)
 	devno = MKDEV(completion_major, completion_minor);
 	err = cdev_add(&completion_dev.cdev, devno, 1);
 	if (err) {
-		PDEBUG("Error(%d): Adding completion device error\n", err);
+		pr_debug("Error(%d): Adding completion device error\n", err);
 		return err;
 	}
 

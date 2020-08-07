@@ -29,7 +29,7 @@ int __init m_init(void)
 
 	ioctl_dev = kmalloc(sizeof(struct ioctl_dev), GFP_KERNEL);
 	if (!ioctl_dev) {
-		PDEBUG("Cannot alloc memory!\n");
+		pr_debug("Cannot alloc memory!\n");
 		return -ENOMEM;
 	}
 
@@ -41,7 +41,7 @@ int __init m_init(void)
 
 	err = alloc_chrdev_region(&devno, ioctl_minor, IOCTL_DEV_NR, MODULE_NAME);
 	if (err < 0) {
-		PDEBUG("Can't get major!\n");
+		pr_debug("Can't get major!\n");
 		goto on_error;
 	}
 	ioctl_major = MAJOR(devno);
@@ -52,7 +52,7 @@ int __init m_init(void)
 	devno = MKDEV(ioctl_major, ioctl_minor);
 	err = cdev_add(&ioctl_dev->cdev, devno, IOCTL_DEV_NR);
 	if (err) {
-		PDEBUG("Error when adding ioctl dev");
+		pr_debug("Error when adding ioctl dev");
 		goto on_error;
 	}
 

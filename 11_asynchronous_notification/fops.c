@@ -13,7 +13,7 @@
 
 int async_notify_open(struct inode *inode, struct file *filp)
 {
-	PDEBUG("%s() is invoked\n", __FUNCTION__);
+	pr_debug("%s() is invoked\n", __FUNCTION__);
 
 	filp->private_data = container_of(inode->i_cdev, struct async_notify_dev, cdev);
 
@@ -26,7 +26,7 @@ ssize_t async_notify_read(struct file *filp, char __user *buff, size_t count,
 	int retval;
 	struct async_notify_dev *dev = filp->private_data;
 
-	PDEBUG("%s() is invoked\n", __FUNCTION__);
+	pr_debug("%s() is invoked\n", __FUNCTION__);
 
 	if (mutex_lock_interruptible(&dev->mutex))
 		return -ERESTARTSYS;
@@ -54,7 +54,7 @@ ssize_t async_notify_write(struct file *filp, const char __user *buff,
 	int retval;
 	struct async_notify_dev *dev = filp->private_data;
 
-	PDEBUG("%s() is invoked\n", __FUNCTION__);
+	pr_debug("%s() is invoked\n", __FUNCTION__);
 
 	if (mutex_lock_interruptible(&dev->mutex))
 		return -ERESTARTSYS;
