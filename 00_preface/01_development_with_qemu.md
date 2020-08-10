@@ -144,7 +144,10 @@ environment.
    mkdir initramfs
 
    # Create necessary directories
-   mkdir -p initramfs/{bin,dev,etc,lib,lib64,mnt,proc,root,sbin,sys}
+   mkdir -p initramfs/{bin,dev,etc,lib,lib64,mnt,proc,root,sbin,sys,tmp}
+
+   # Set Permission
+   chmod 1777 tmp
 
    # Copy necessary device files from host
    cp -a /dev/{null,console,tty,ttyS0} initramfs/dev/
