@@ -86,7 +86,6 @@ static struct file_operations fops = {
 	.owner	 = THIS_MODULE,
 	.read	 = short_read,
 	.write	 = short_write,
-	// .poll	 = short_poll,
 	.open	 = short_open,
 	.release = short_release,
 };
@@ -107,10 +106,9 @@ int __init m_init(void)
 	int result = 0;
 	short_base = base;
 
-	pr_err("Hello!\n");
-	pr_err("base = %#lx\n", short_base);
 	if (!request_region(short_base, SHORT_NR_PORTS, "short")) {
-		PDEBUG("short: cannot get I/O port address %#lx\n", short_base);
+		pr_err("short_ioport: cannot get I/O port address %#lx\n",
+		       short_base);
 		result = -ENODEV;
 		goto out;
 	}
