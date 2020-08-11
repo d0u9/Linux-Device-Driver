@@ -12,7 +12,6 @@
 #include "main.h"
 
 static int major = 0;
-static int short_irq = 6;
 
 static unsigned long base = 0x200;
 unsigned long short_base = 0;
@@ -30,29 +29,22 @@ int short_release(struct inode *inode, struct file *filp)
 ssize_t short_read(struct file *filp, char __user *buf, size_t count, loff_t *f_pos)
 {
 	unsigned long port = short_base;
-	unsigned char *kbuf;
-	int i;
+	char v;
 
-	kbuf = kzalloc(count, GFP_KERNEL);
-	if (!kbuf)
-		return -ENOMEM;
-
-	i = *f_pos;
-
-	while (i < count) {
-		kbuf[i] = inb(port);
-		rmb();
-		if (kbuf[i++] == '\n')
-			break;
+	if (*f_pos > 0) {
+		return 0;
 	}
 
-	if (copy_to_user(buf, kbuf, i)) {
-		i = -EFAULT;
+	v = inb(port);
+	rmb();
+
+	(*f_pos)++;
+
+	if (copy_to_user(buf, &v, 1)) {
+		return -EFAULT;
 	}
 
-	kfree(kbuf);
-
-	return i;
+	return 1;
 }
 
 ssize_t short_write(struct file *filp, const char __user *buf, size_t count,
@@ -90,16 +82,6 @@ static struct file_operations fops = {
 	.release = short_release,
 };
 
-irqreturn_t irq_service(int irq, void *dev_id)
-{
-	if (short_irq != irq)
-		short_irq = -irq;
-
-	pr_debug("IRQ -----\n");
-
-	return IRQ_HANDLED;
-}
-
 static
 int __init m_init(void)
 {
@@ -113,28 +95,14 @@ int __init m_init(void)
 		goto out;
 	}
 
-	if (short_irq >= 0) {
-		result = request_irq(short_irq, irq_service, 0,
-				     MODULE_NAME, NULL);
-		if (result) {
-			pr_err("Request irq %d failed\n", short_irq);
-			short_irq = -1;
-			result = -ENODEV;
-			goto unreg_region;
-		}
-	}
-
 	result = register_chrdev(major, MODULE_NAME, &fops);
 	if (result < 0) {
 		pr_err("cannot get major number!\n");
-		goto unreg_irq;
+		goto unreg_region;
 	}
 	major = (major == 0) ? result : major;
 
 	return 0;
-
-unreg_irq:
-	free_irq(short_irq, NULL);
 
 unreg_region:
 	release_region(short_base, SHORT_NR_PORTS);
@@ -147,7 +115,6 @@ static
 void __exit m_exit(void)
 {
 	unregister_chrdev(major, MODULE_NAME);
-	free_irq(short_irq, NULL);
 	release_region(short_base, SHORT_NR_PORTS);
 }
 

@@ -29,29 +29,22 @@ int short_release(struct inode *inode, struct file *filp)
 
 ssize_t short_read(struct file *filp, char __user *buf, size_t count, loff_t *f_pos)
 {
-	unsigned char *kbuf;
-	int i;
+	char v;
 
-	kbuf = kzalloc(count, GFP_KERNEL);
-	if (!kbuf)
-		return -ENOMEM;
-
-	i = *f_pos;
-
-	while (i < count) {
-		kbuf[i] = ioread8(short_iomem);
-		rmb();
-		if (kbuf[i++] == '\n')
-			break;
+	if (*f_pos > 0) {
+		return 0;
 	}
 
-	if (copy_to_user(buf, kbuf, i)) {
-		i = -EFAULT;
+	v = ioread8(short_iomem);
+	rmb();
+
+	(*f_pos)++;
+
+	if (copy_to_user(buf, &v, 1)) {
+		return -EFAULT;
 	}
 
-	kfree(kbuf);
-
-	return i;
+	return 1;
 }
 
 ssize_t short_write(struct file *filp, const char __user *buf, size_t count,
