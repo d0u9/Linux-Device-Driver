@@ -8,6 +8,7 @@
 #include <linux/uaccess.h>
 #include <linux/interrupt.h>
 #include <linux/spinlock.h>
+#include <linux/delay.h>
 #include <asm/io.h>
 
 #include "main.h"
@@ -24,8 +25,7 @@ int short_open(struct inode *inode, struct file *filp)
 	return 0;
 }
 
-int short_release(struct inode *inode, struct file *filp)
-{
+int short_release(struct inode *inode, struct file *filp) {
 	return 0;
 }
 
@@ -96,6 +96,37 @@ irqreturn_t irq_service(int irq, void *dev_id)
 }
 
 static
+int interrupt_probe(void)
+{
+	unsigned long mask;
+	int count = 0, irq;
+
+	do {
+		mask = probe_irq_on();
+		outb(1, short_base + 1);
+		outb('\n', short_base);
+		outb(0, short_base + 1);
+		udelay(5);
+		irq = probe_irq_off(mask);
+
+		if (irq == 0) {
+			pr_warn(MODULE_NAME ": no irq reported by probe\n");
+			irq = -1;
+		}
+
+	} while (irq < 0 && count++ < 5);
+
+	if (irq < 0) {
+		pr_err(MODULE_NAME ": probe failed %d times, giving up\n", count);
+		return -1;
+	}
+
+	pr_info("irq occured on line %d\n", irq);
+
+	return irq;
+}
+
+static
 int __init m_init(void)
 {
 	int result = 0;
@@ -115,20 +146,24 @@ int __init m_init(void)
 		goto out;
 	}
 
-	if (short_irq >= 0) {
-		result = request_irq(short_irq, irq_service, 0,
-				     MODULE_NAME, dev);
-		if (result) {
-			pr_err("Request irq %d failed\n", short_irq);
-			short_irq = -1;
-			result = -ENODEV;
-			goto unreg_region;
-		}
-
-		// enable interrupt
-		outb(1, short_base + 1);
-		wmb();
+	short_irq = interrupt_probe();
+	if (short_irq < 0) {
+		result = -ENODEV;
+		goto unreg_region;
 	}
+
+	result = request_irq(short_irq, irq_service, 0, MODULE_NAME, dev);
+	if (result) {
+		pr_err("Request irq %d failed\n", short_irq);
+		short_irq = -1;
+		result = -ENODEV;
+		goto unreg_region;
+	}
+
+
+	// enable interrupt
+	outb(1, short_base + 1);
+	wmb();
 
 	result = register_chrdev(major, MODULE_NAME, &fops);
 	if (result < 0) {
@@ -167,4 +202,4 @@ module_exit(m_exit);
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("d0u9");
-MODULE_DESCRIPTION("Interrupt handle");
+MODULE_DESCRIPTION("IRQ probe");
