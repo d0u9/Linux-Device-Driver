@@ -3,6 +3,7 @@
 #include <linux/init.h>
 #include <linux/usb.h>
 #include <linux/slab.h>
+#include <linux/poll.h>
 
 #include "main.h"
 
@@ -24,8 +25,16 @@ static void skel_delete(struct kref *kref)
 	struct usb_skel *dev = to_skel_dev(kref);
 
 	usb_put_dev(dev->udev);
-	kfree(dev->bulk_in_buffer);
-	kfree(dev->int_in_buffer);
+
+	if (dev->int_in_buffer)
+		usb_free_coherent(dev->udev, 8, dev->int_in_buffer, dev->irq_urb->transfer_dma);
+
+	if (dev->irq_urb)
+		usb_free_urb(dev->irq_urb);
+
+	if (dev->bulk_in_buffer)
+		kfree(dev->bulk_in_buffer);
+
 	kfree(dev);
 }
 
@@ -36,28 +45,27 @@ static int skel_open(struct inode *inode, struct file *file)
 	struct usb_skel *dev;
 	struct usb_interface *interface;
 	int subminor;
-	int retval = 0;
 
 	subminor = iminor(inode);
 	interface = usb_find_interface(&skel_driver, subminor);
 	if (!interface) {
 		pr_err("%s - error, can't find device for minor %d",
 		       __FUNCTION__, subminor);
-		retval = -ENODEV;
-		goto exit;
+		return -ENODEV;
 	}
 
 	dev = usb_get_intfdata(interface);
 	if (!dev) {
-		retval = -ENODEV;
-		goto exit;
+		return -ENODEV;
 	}
 
 	kref_get(&dev->kref);
 
 	file->private_data = dev;
 
-exit:
+	if (usb_submit_urb(dev->irq_urb, GFP_KERNEL))
+		return -EIO;
+
 	return 0;
 }
 
@@ -69,6 +77,7 @@ static int skel_release(struct inode *inode, struct file *file)
 	if (dev == NULL)
 		return -ENODEV;
 
+	usb_kill_urb(dev->irq_urb);
 	kref_put(&dev->kref, skel_delete);
 
 	return 0;
@@ -123,20 +132,15 @@ static ssize_t skel_write(struct file *file, const char __user *user_buffer, siz
 	struct usb_skel *dev;
 	int retval = 0;
 	struct urb *urb = NULL;
-	char *buf = NULL;
+	char *urb_buf = NULL, *buf = NULL;
+	unsigned int val;
 
 	dev = (struct usb_skel *)file->private_data;
 
 	if (count == 0)
 		goto exit;
 
-	urb = usb_alloc_urb(0, GFP_KERNEL);
-	if (!urb) {
-		retval = -ENOMEM;
-		goto error;
-	}
-
-	buf = usb_alloc_coherent(dev->udev, count, GFP_KERNEL, &urb->transfer_dma);
+	buf = kzalloc(count + 1, GFP_KERNEL);
 	if (!buf) {
 		retval = -ENOMEM;
 		goto error;
@@ -147,42 +151,60 @@ static ssize_t skel_write(struct file *file, const char __user *user_buffer, siz
 		goto error;
 	}
 
-	pr_debug("-------1\n");
+	retval = kstrtouint(buf, 0, &val);
+	if (retval < 0)
+		goto error;
+
+	urb = usb_alloc_urb(0, GFP_KERNEL);
+	if (!urb) {
+		retval = -ENOMEM;
+		goto error;
+	}
+
+	urb_buf = usb_alloc_coherent(dev->udev, sizeof(val), GFP_KERNEL, &urb->transfer_dma);
+	if (!urb_buf) {
+		retval = -ENOMEM;
+		goto error;
+	}
+
+	memcpy(urb_buf, &val, sizeof(val));
 
 	usb_fill_bulk_urb(urb, dev->udev,
 			  usb_sndbulkpipe(dev->udev, dev->bulk_out_endpointAddr),
-			  buf, count, skel_write_bulk_callback, dev);
+			  &val, sizeof(val), skel_write_bulk_callback, dev);
 	urb->transfer_flags |= URB_NO_TRANSFER_DMA_MAP;
-
-	pr_debug("-------2\n");
 
 	retval = usb_submit_urb(urb, GFP_KERNEL);
 	if (retval) {
-		pr_debug("-------q\n");
 		pr_err("%s - failed submitting write urb, error %d\n", __FUNCTION__, retval);
 		goto error;
 	}
 
-	pr_debug("-------3\n");
-
 	usb_free_urb(urb);
-
-	pr_debug("-------4\n");
-
+	kfree(buf);
 exit:
 	return count;
 
 error:
 	if (urb) {
-		usb_free_coherent(dev->udev, count, buf, urb->transfer_dma);
+		usb_free_coherent(dev->udev, count, urb_buf, urb->transfer_dma);
 		usb_free_urb(urb);
 	}
+	if (buf)
+		kfree(buf);
 	return retval;
 }
 
 unsigned int skel_poll(struct file *filp, poll_table *wait)
 {
 	unsigned int mask = 0;
+	struct usb_skel *dev = filp->private_data;
+
+	poll_wait(filp, &dev->wq, wait);
+	if (atomic_dec_and_test(&dev->can_rd)) {
+		pr_debug("Now fd can be read\n");
+		mask |= POLLIN | POLLRDNORM;
+	}
 
 	return mask;
 }
@@ -202,8 +224,45 @@ static struct usb_class_driver skel_class = {
 	.minor_base = USB_SKEL_MINOR_BASE,
 };
 
+static void usb_irq(struct urb *urb)
+{
+	struct usb_skel *dev = urb->context;
+	int status;
+	int *data = (int*)(dev->int_in_buffer);
+
+
+	switch (urb->status) {
+	case 0:			/* success */
+		break;
+	case -ECONNRESET:	/* unlink */
+	case -ENOENT:
+	case -ESHUTDOWN:
+		return;
+	/* -EPIPE:  should clear the halt */
+	default:		/* error */
+		goto resubmit;
+	}
+
+	if (data[0] > 0) {
+		// Data available
+		atomic_set(&dev->can_rd, 1);
+		wake_up_interruptible(&dev->wq);
+	}
+		
+	pr_debug("interrupt: %x:%x\n", data[0], data[1]);
+
+resubmit:
+	status = usb_submit_urb(urb, GFP_ATOMIC);
+	if (status)
+		dev_err(&dev->udev->dev,
+			"can't resubmit intr, %s-%s/input0, status %d\n",
+			dev->udev->bus->bus_name,
+			dev->udev->devpath, status);
+}
+
 static int skel_probe(struct usb_interface *interface, const struct usb_device_id *id)
 {
+	int pipe, maxp;
 	struct usb_skel *dev = NULL;
 	struct usb_endpoint_descriptor *bulk_in, *bulk_out, *int_in;
 	int retval = -ENOMEM;
@@ -239,61 +298,33 @@ static int skel_probe(struct usb_interface *interface, const struct usb_device_i
 
 	dev->int_in_size = usb_endpoint_maxp(int_in);
 	dev->int_in_endpointAddr = int_in->bEndpointAddress;
-	dev->int_in_buffer = kmalloc(dev->int_in_size, GFP_KERNEL);
-	if (!dev->int_in_buffer) {
-		kfree(dev->bulk_in_buffer);
+
+	dev->irq_urb = usb_alloc_urb(0, GFP_KERNEL);
+	if (!dev->irq_urb) {
+		pr_err("alloc irq urb failed\n");
 		retval = -ENOMEM;
 		goto error;
 	}
 
-	init_waitqueue_head(&dev->wq);
+	pipe = usb_rcvintpipe(dev->udev, dev->int_in_endpointAddr);
+	maxp = usb_maxpacket(dev->udev, pipe, usb_pipeout(pipe));
+
+	dev->int_in_buffer = usb_alloc_coherent(dev->udev, 8, GFP_ATOMIC, &dev->irq_urb->transfer_dma);
+	if (!dev->int_in_buffer) {
+		retval = -ENOMEM;
+		pr_err("alloc coherent failed\n");
+		goto error;
+	}
+
+	usb_fill_int_urb(dev->irq_urb, dev->udev, pipe, dev->int_in_buffer,
+			 (maxp > 8 ? 8 : maxp),
+			 usb_irq, dev, int_in->bInterval);
+	dev->irq_urb->transfer_flags |= URB_NO_TRANSFER_DMA_MAP;
 
 	pr_debug("int in size: %ld\n", dev->int_in_size);
 
-#if 0
-	int i;
-	size_t buffer_size;
-	struct usb_host_interface *iface_desc = NULL;
-	struct usb_endpoint_descriptor *endpoint = NULL;
-
-
-	iface_desc = interface->cur_altsetting;
-	for (i = 0; i < iface_desc->desc.bNumEndpoints; ++i) {
-		pr_debug("xxxx\n");
-		endpoint = &iface_desc->endpoint[i].desc;
-		pr_debug("==== %x\n", endpoint->bEndpointAddress);
-
-		if (!dev->bulk_in_buffer &&
-		    (endpoint->bEndpointAddress & USB_DIR_IN) &&
-		    ((endpoint->bmAttributes & USB_ENDPOINT_XFERTYPE_MASK)
-					== USB_ENDPOINT_XFER_BULK)) {
-			/* we found a bulk in endpoint */
-			buffer_size = endpoint->wMaxPacketSize;
-			dev->bulk_in_size = buffer_size;
-			dev->bulk_in_endpointAddr = endpoint->bEndpointAddress;
-			pr_debug("in %x\n", endpoint->bEndpointAddress);
-			dev->bulk_in_buffer = kzalloc(buffer_size, GFP_KERNEL);
-			if (!dev->bulk_in_buffer) {
-				pr_err("Could not alloc bulk_in_buffer\n");
-				goto error;
-			}
-		}
-
-		if (!dev->bulk_out_endpointAddr &&
-		    !(endpoint->bEndpointAddress & USB_DIR_IN) && 
-		    ((endpoint->bmAttributes & USB_ENDPOINT_XFERTYPE_MASK)
-					== USB_ENDPOINT_XFER_BULK)) {
-			dev->bulk_out_endpointAddr = endpoint->bEndpointAddress;
-			pr_debug("out %x\n", endpoint->bEndpointAddress);
-		}
-	}
-
-	if (!(dev->bulk_in_endpointAddr && dev->bulk_out_endpointAddr)) {
-		pr_err("Could not find both bulk-in and bulk-out endpoints\n");
-		goto error;
-	}
-#endif
-
+	atomic_set(&dev->can_rd, 0);
+	init_waitqueue_head(&dev->wq);
 	usb_set_intfdata(interface, dev);
 
 	retval = usb_register_dev(interface, &skel_class);

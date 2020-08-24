@@ -14,8 +14,11 @@ struct usb_skel {
 	size_t			int_in_size;
 	__u8			int_in_endpointAddr;
 	unsigned char		*int_in_buffer;
-	struct kref		kref;
+	struct urb		*irq_urb;
 
+	atomic_t can_rd;
+
+	struct kref		kref;
 	wait_queue_head_t	wq;
 };
 
