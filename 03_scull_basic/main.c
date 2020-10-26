@@ -72,6 +72,7 @@ int __init m_init(void)
 		}
 	}
 
+	// TODO: unregister chrdev_region here if fail
 	return 0;
 }
 
