@@ -126,8 +126,7 @@ long ioctl_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	}
 
 	err = access_ok(arg, _IOC_SIZE(cmd));
-
-	if (err)
+	if (!err)
 		return -EFAULT;
 
 	switch (cmd) {
