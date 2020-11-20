@@ -18,6 +18,7 @@ busybox contains a telnet server, i.e `telnetd`. We cannot directly use
    cd /path/to/initramfs
 
    mkdir dev/pts
+   mknod -m 666 /dev/ptmx c 5 2
    ```
 
    Modify `initramfs/init` to auto mount devpts, add the command below to your
