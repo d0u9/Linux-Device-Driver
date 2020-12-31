@@ -1,0 +1,682 @@
+From cd6558129d2a4dfc63322f713c93cfc8d2102f40 Mon Sep 17 00:00:00 2001
+From: d0u9 <d0u9.su@outlook.com>
+Date: Fri, 7 Aug 2020 14:07:41 +0800
+Subject: [PATCH] Add hardwares for LDD repo using
+
+These hardwares has the purpose for education.
+---
+ hw/misc/Kconfig        |  10 ++
+ hw/misc/isa_kmod_edu.c | 184 +++++++++++++++++++++++++++++++++++++
+ hw/misc/meson.build    |   2 +
+ hw/misc/pci_kmod_edu.c | 196 +++++++++++++++++++++++++++++++++++++++
+ hw/usb/Kconfig         |   6 ++
+ hw/usb/meson.build     |   1 +
+ hw/usb/usb_kmod_edu.c  | 203 +++++++++++++++++++++++++++++++++++++++++
+ 7 files changed, 602 insertions(+)
+ create mode 100644 hw/misc/isa_kmod_edu.c
+ create mode 100644 hw/misc/pci_kmod_edu.c
+ create mode 100644 hw/usb/usb_kmod_edu.c
+
+diff --git a/hw/misc/Kconfig b/hw/misc/Kconfig
+index dc44dc14f6..180592abc2 100644
+--- a/hw/misc/Kconfig
++++ b/hw/misc/Kconfig
+@@ -36,6 +36,16 @@ config EDU
+     default y if TEST_DEVICES
+     depends on PCI && MSI_NONBROKEN
+ 
++config ISA_KMOD_EDU
++    bool
++    default y if TEST_DEVICES
++    depends on ISA_BUS
++
++config PCI_KMOD_EDU
++    bool
++    default y if TEST_DEVICES
++    depends on PCI && MSI_NONBROKEN
++
+ config PCA9552
+     bool
+     depends on I2C
+diff --git a/hw/misc/isa_kmod_edu.c b/hw/misc/isa_kmod_edu.c
+new file mode 100644
+index 0000000000..a5966ee6a2
+--- /dev/null
++++ b/hw/misc/isa_kmod_edu.c
+@@ -0,0 +1,184 @@
++#include "qemu/osdep.h"
++#include "hw/isa/isa.h"
++#include "hw/qdev-properties.h"
++#include "chardev/char-fe.h"
++#include "qapi/error.h"
++#include "sysemu/reset.h"
++#include "hw/irq.h"
++
++#define MMIO_BASE		0xFF000000
++#define IO_BASE			0x200
++#define PORT_WIDTH		0x10
++
++#define TYPE_ISA_KMOD_EDU	"isa-kmod-edu"
++#define ISA_KMOD_EDU(obj) \
++	OBJECT_CHECK(ISAKmodEduState, (obj), TYPE_ISA_KMOD_EDU)
++
++typedef struct ISAKmodEduState {
++	ISADevice parent_obj;
++
++	uint32_t iobase;
++	uint32_t mmiobase;
++	uint32_t isairq;
++	bool irq_enabled;
++
++	uint8_t data;
++
++	CharBackend chr;
++	qemu_irq irq;
++	PortioList portio_list;
++	MemoryRegion iomem;
++} ISAKmodEduState;
++
++static void isa_kmod_edu_reset(void *opaque)
++{
++}
++
++static int isa_kmod_edu_can_receive(void *opaque)
++{
++	return 1;
++}
++
++static uint64_t isa_kmod_edu_mm_read(void *opaque, hwaddr addr, unsigned size)
++{
++	ISAKmodEduState *edu = opaque;
++	uint8_t ret;
++
++	switch (addr) {
++	case 0: // DATA
++		ret = edu->data;
++		break;
++	case 1: // CTRL
++		ret = edu->irq_enabled;
++		break;
++	default:
++		ret = 0;
++	}
++
++	return (uint32_t)ret;
++}
++
++static void isa_kmod_edu_mm_write(void *opaque, hwaddr addr,
++				    uint64_t value, unsigned size)
++{
++	ISAKmodEduState *edu = opaque;
++	uint8_t byte = (uint8_t)value;
++
++	switch (addr) {
++	case 0:  // DATA
++		qemu_chr_fe_write_all(&edu->chr, &byte, 1);
++		if (isgraph(byte))
++			edu->data = byte;
++		// send interrupt if user write a '\a' char.
++		if (edu->irq_enabled && byte == '\n')
++			qemu_irq_pulse(edu->irq);
++		break;
++	case 1:	 // CTRL
++		if (value != 0) {
++			edu->irq_enabled = true;
++		} else {
++			edu->irq_enabled = false;
++		}
++		break;
++	default:
++		break;
++	}
++
++}
++
++static const MemoryRegionOps isa_kmod_edu_mm_ops = {
++    .read = isa_kmod_edu_mm_read,
++    .write = isa_kmod_edu_mm_write,
++    .valid.min_access_size = 1,
++    .valid.max_access_size = 4,
++    .endianness = DEVICE_NATIVE_ENDIAN,
++};
++
++static uint32_t isa_kmod_edu_ioport_read(void *opaque, uint32_t addr)
++{
++	ISAKmodEduState *edu = opaque;
++	return (uint64_t)isa_kmod_edu_mm_read(opaque, addr - edu->iobase, 1);
++}
++
++static void
++isa_kmod_edu_ioport_write(void *opaque, uint32_t addr, uint32_t val)
++{
++	 ISAKmodEduState *edu = opaque;
++	isa_kmod_edu_mm_write(opaque, addr - edu->iobase, val, 1);
++}
++
++static const MemoryRegionPortio isa_kmod_edu_portio_list[] = {
++    { 0, PORT_WIDTH, 1,
++      .read = isa_kmod_edu_ioport_read,
++      .write = isa_kmod_edu_ioport_write },
++    PORTIO_END_OF_LIST(),
++};
++
++static void isa_kmod_edu_realizefn(DeviceState *dev, Error **errp)
++{
++	static bool registered = false;
++	ISADevice *isadev = ISA_DEVICE(dev);
++	ISAKmodEduState *edu = ISA_KMOD_EDU(dev);
++	MemoryRegion *isa_mm;
++
++	if (registered) {
++		error_setg(errp, "Only one kmod_edu device can be registered");
++		return;
++	}
++
++	if (!qemu_chr_fe_backend_connected(&edu->chr)) {
++		error_setg(errp, "Can't create kmod_edu device, empty char device");
++		return;
++	}
++	
++	if (edu->iobase == -1)
++		edu->iobase = IO_BASE;
++
++	if (edu->mmiobase == -1)
++		edu->mmiobase = MMIO_BASE;
++
++	isa_init_irq(isadev, &edu->irq, edu->isairq);
++	qemu_register_reset(isa_kmod_edu_reset, edu);
++
++	isa_mm = isa_address_space(isadev);
++	memory_region_init_io(&edu->iomem, NULL, &isa_kmod_edu_mm_ops, edu,
++			      TYPE_ISA_KMOD_EDU, PORT_WIDTH);
++	memory_region_add_subregion_overlap(isa_mm, edu->mmiobase, &edu->iomem, 3);
++
++	qemu_chr_fe_set_handlers(&edu->chr, isa_kmod_edu_can_receive, NULL,
++				 NULL, NULL, edu, NULL, true);
++	isa_register_portio_list(isadev, &edu->portio_list, edu->iobase,
++				 isa_kmod_edu_portio_list,
++				 edu, TYPE_ISA_KMOD_EDU);
++}
++
++static Property isa_kmod_edu_properties[] = {
++    DEFINE_PROP_UINT32("iobase", ISAKmodEduState, iobase,  -1),
++    DEFINE_PROP_UINT32("mmiobase", ISAKmodEduState, mmiobase,  -1),
++    DEFINE_PROP_UINT32("irq",   ISAKmodEduState, isairq,  6),
++    DEFINE_PROP_CHR("chardev",  ISAKmodEduState, chr),
++    DEFINE_PROP_END_OF_LIST(),
++};
++
++static void isa_kmod_edu_class_initfn(ObjectClass *klass, void *data)
++{
++	DeviceClass *dc = DEVICE_CLASS(klass);
++
++	dc->realize = isa_kmod_edu_realizefn;
++	device_class_set_props(dc, isa_kmod_edu_properties);
++	set_bit(DEVICE_CATEGORY_MISC, dc->categories);
++}
++
++static const TypeInfo isa_kmod_edu_info = {
++	.name		= TYPE_ISA_KMOD_EDU,
++	.parent		= TYPE_ISA_DEVICE,
++	.instance_size	= sizeof(ISAKmodEduState),
++	.class_init	= isa_kmod_edu_class_initfn,
++};
++
++static void isa_kmod_edu_register_types(void)
++{
++	type_register_static(&isa_kmod_edu_info);
++}
++
++type_init(isa_kmod_edu_register_types)
+diff --git a/hw/misc/meson.build b/hw/misc/meson.build
+index 1cd48e8a0f..cf7c6409d9 100644
+--- a/hw/misc/meson.build
++++ b/hw/misc/meson.build
+@@ -1,5 +1,7 @@
+ softmmu_ss.add(when: 'CONFIG_APPLESMC', if_true: files('applesmc.c'))
+ softmmu_ss.add(when: 'CONFIG_EDU', if_true: files('edu.c'))
++softmmu_ss.add(when: 'CONFIG_ISA_KMOD_EDU', if_true: files('isa_kmod_edu.c'))
++softmmu_ss.add(when: 'CONFIG_PCI_KMOD_EDU', if_true: files('pci_kmod_edu.c'))
+ softmmu_ss.add(when: 'CONFIG_FW_CFG_DMA', if_true: files('vmcoreinfo.c'))
+ softmmu_ss.add(when: 'CONFIG_ISA_DEBUG', if_true: files('debugexit.c'))
+ softmmu_ss.add(when: 'CONFIG_ISA_TESTDEV', if_true: files('pc-testdev.c'))
+diff --git a/hw/misc/pci_kmod_edu.c b/hw/misc/pci_kmod_edu.c
+new file mode 100644
+index 0000000000..7c00d60bd6
+--- /dev/null
++++ b/hw/misc/pci_kmod_edu.c
+@@ -0,0 +1,196 @@
++#include "qemu/osdep.h"
++#include "qemu/module.h"
++#include "hw/pci/pci.h"
++#include "hw/pci/pcie.h"
++#include "hw/pci/msi.h"
++#include "hw/pci/msix.h"
++#include "qemu/units.h"
++#include "hw/hw.h"
++#if 0
++#include "hw/pci/msi.h"
++#include "qemu/timer.h"
++#include "qemu/main-loop.h" /* iothread mutex */
++#include "qapi/visitor.h"
++#endif
++
++#define KMOD_EDU_MSIX_VEC_NUM	        (4)
++#define KMOD_EDU_MSIX_IDX	            (1)
++#define KMOD_EDU_MSIX_TABLE	            (0x3000)
++#define KMOD_EDU_MSIX_PBA	            (0x3800)
++#define KMOD_EDU_MSIX_SIZE              (64 * KiB)
++
++#define TYPE_KMOD_EDU		            "pci-kmod-edu"
++#define KMOD_EDU(obj) \
++    OBJECT_CHECK(PCIKmodEduState, (obj), TYPE_KMOD_EDU)
++
++typedef struct PCIKmodEduState {
++    PCIDevice parent_obj;
++
++    uint32_t irq_status;
++    MemoryRegion mmio;
++
++    bool use_msix;
++    MemoryRegion msix;
++} PCIKmodEduState;
++
++static bool kmod_edu_msix_enabled(PCIKmodEduState *edu)
++{
++    return msix_enabled(PCI_DEVICE(edu));
++}
++
++static void kmod_edu_raise_irq(PCIKmodEduState *edu, uint32_t val)
++{
++    static int last = 0;
++    last = (last + 1) % KMOD_EDU_MSIX_VEC_NUM;
++    if (kmod_edu_msix_enabled(edu)) {
++        msix_notify(PCI_DEVICE(edu), last);
++    }
++}
++
++static void kmod_edu_lower_irq(PCIKmodEduState *edu, uint32_t val)
++{
++
++}
++
++static uint64_t kmod_edu_mmio_read(void *opaque, hwaddr addr, unsigned size)
++{
++    return 0;
++}
++
++static void kmod_edu_mmio_write(void *opaque, hwaddr addr, uint64_t val,
++                                unsigned size)
++{
++    PCIKmodEduState *edu = opaque;
++    switch (addr) {
++    case 0x60:          // Trigger interrupt
++        kmod_edu_raise_irq(edu, 1);
++        kmod_edu_lower_irq(edu, 1);
++        break;
++    }
++}
++
++static const MemoryRegionOps kmod_edu_mmio_ops = {
++    .read = kmod_edu_mmio_read,
++    .write = kmod_edu_mmio_write,
++    .endianness = DEVICE_NATIVE_ENDIAN,
++    .valid = {
++        .min_access_size = 4,
++        .max_access_size = 8,
++    },
++    .impl = {
++        .min_access_size = 4,
++        .max_access_size = 8,
++    },
++};
++
++static void kmod_edu_unuse_msix_vectors(PCIKmodEduState *edu, int num_vectors)
++{
++    int i;
++    for (i = 0; i < num_vectors; i++) {
++        msix_vector_unuse(PCI_DEVICE(edu), i);
++    }
++}
++
++static bool kmod_edu_use_msix_vectors(PCIKmodEduState *edu, int num_vectors)
++{
++    int i, rv;
++    for (i = 0; i < num_vectors; i++) {
++        rv = msix_vector_use(PCI_DEVICE(edu), i);
++        if (rv < 0) {
++            kmod_edu_unuse_msix_vectors(edu, i);
++            return false;
++        }
++    }
++    return true;
++}
++
++static void kmod_edu_realize(PCIDevice *pdev, Error **errp)
++{
++    int rv;
++    PCIKmodEduState *edu = KMOD_EDU(pdev);
++    uint8_t *pci_conf = pdev->config;
++    Error *local_err = NULL;
++
++    pci_config_set_interrupt_pin(pci_conf, 1);
++
++    memory_region_init_io(&edu->mmio, OBJECT(edu), &kmod_edu_mmio_ops,
++                          edu, "edu-mmio", 8 *MiB);
++    pci_register_bar(pdev, 0, PCI_BASE_ADDRESS_SPACE_MEMORY, &edu->mmio);
++
++    memory_region_init(&edu->msix, OBJECT(edu), "kmod-edu-msix",
++                       KMOD_EDU_MSIX_SIZE);
++    pci_register_bar(pdev, KMOD_EDU_MSIX_IDX,
++                     PCI_BASE_ADDRESS_SPACE_MEMORY, &edu->msix);
++
++    rv = msix_init(pdev, KMOD_EDU_MSIX_VEC_NUM,
++                   &edu->msix, KMOD_EDU_MSIX_IDX, KMOD_EDU_MSIX_TABLE,
++                   &edu->msix, KMOD_EDU_MSIX_IDX, KMOD_EDU_MSIX_PBA,
++                   0, errp);
++    if (rv == 0) {
++        if (!kmod_edu_use_msix_vectors(edu, KMOD_EDU_MSIX_VEC_NUM)) {
++            msix_uninit(PCI_DEVICE(edu), &edu->mmio, &edu->mmio);
++        }
++    }
++
++    if (pcie_endpoint_cap_init(pdev, 0x0E0) < 0) {
++        hw_error("Failed to initialize PCIe capability");
++    }
++
++    pci_add_capability(pdev, PCI_CAP_ID_PM, 0x0C8, PCI_PM_SIZEOF, &local_err);
++
++
++}
++
++static void kmod_edu_uninit(PCIDevice *pdev)
++{
++    PCIKmodEduState *edu = KMOD_EDU(pdev);
++
++    pcie_cap_exit(pdev);
++
++    if (msix_present(PCI_DEVICE(edu))) {
++        kmod_edu_unuse_msix_vectors(edu, KMOD_EDU_MSIX_VEC_NUM);
++        msix_uninit(pdev, &edu->mmio, &edu->mmio);
++    }
++}
++
++static void kmod_edu_instance_init(Object *obj)
++{
++    // PCIKmodEduState *edu = KMOD_EDU(obj);
++}
++
++static void kmod_edu_class_initfn(ObjectClass *klass, void *data)
++{
++    DeviceClass *dc = DEVICE_CLASS(klass);
++    PCIDeviceClass *k = PCI_DEVICE_CLASS(klass);
++
++    k->realize = kmod_edu_realize;
++    k->exit = kmod_edu_uninit;
++    k->vendor_id = PCI_VENDOR_ID_QEMU;
++    k->device_id = 0x7863;
++    k->revision = 0x10;
++    k->class_id = PCI_CLASS_OTHERS;
++    set_bit(DEVICE_CATEGORY_MISC, dc->categories);
++}
++
++static InterfaceInfo interfaces[] = {
++    // { INTERFACE_CONVENTIONAL_PCI_DEVICE },
++    { INTERFACE_PCIE_DEVICE },
++    { },
++};
++
++static const TypeInfo kmod_edu_info = {
++    .name		= TYPE_KMOD_EDU,
++    .parent		= TYPE_PCI_DEVICE,
++    .instance_size	= sizeof(PCIKmodEduState),
++    .instance_init	= kmod_edu_instance_init,
++    .class_init	= kmod_edu_class_initfn,
++    .interfaces = interfaces,
++};
++
++static void kmod_edu_register_types(void)
++{
++    type_register_static(&kmod_edu_info);
++}
++
++type_init(kmod_edu_register_types)
++
+diff --git a/hw/usb/Kconfig b/hw/usb/Kconfig
+index 7fbae18bc8..f5e26d9a8e 100644
+--- a/hw/usb/Kconfig
++++ b/hw/usb/Kconfig
+@@ -112,3 +112,9 @@ config IMX_USBPHY
+     bool
+     default y
+     depends on USB
++
++config USB_KMOD_EDU
++    bool
++    default y if TEST_DEVICES
++    depends on USB
++
+diff --git a/hw/usb/meson.build b/hw/usb/meson.build
+index 934e4fa675..61f82dc13c 100644
+--- a/hw/usb/meson.build
++++ b/hw/usb/meson.build
+@@ -40,6 +40,7 @@ softmmu_ss.add(when: 'CONFIG_USB_STORAGE_UAS', if_true: files('dev-uas.c'))
+ softmmu_ss.add(when: 'CONFIG_USB_AUDIO', if_true: files('dev-audio.c'))
+ softmmu_ss.add(when: 'CONFIG_USB_SERIAL', if_true: files('dev-serial.c'))
+ softmmu_ss.add(when: 'CONFIG_USB_NETWORK', if_true: files('dev-network.c'))
++softmmu_ss.add(when: 'CONFIG_USB_KMOD_EDU', if_true: files('usb_kmod_edu.c'))
+ softmmu_ss.add(when: ['CONFIG_POSIX', 'CONFIG_USB_STORAGE_MTP'], if_true: files('dev-mtp.c'))
+ 
+ # smartcard
+diff --git a/hw/usb/usb_kmod_edu.c b/hw/usb/usb_kmod_edu.c
+new file mode 100644
+index 0000000000..83c0364ff6
+--- /dev/null
++++ b/hw/usb/usb_kmod_edu.c
+@@ -0,0 +1,203 @@
++#include <time.h>
++#include <stdlib.h>
++
++#include "qemu/osdep.h"
++#include "qemu/module.h"
++#include "hw/usb.h"
++#include "desc.h"
++
++#define TYPE_USB_KMOD_EDU	"usb-kmod-edu"
++#define USB_KMOD_EDU(obj) \
++	OBJECT_CHECK(USBKmodEduState, (obj), TYPE_USB_KMOD_EDU)
++
++#define USB_MANUFACTURER	0x0001
++#define USB_PRODUCT		0x0002
++#define USB_SERIALNUMBER	0x0003
++#define CAPACITY		0x100000	// 1M bytes
++
++#define BULK_PACKET_SIZE	64
++#define INT_PACKET_SIZE		8
++
++typedef struct USBKmodEduState {
++	USBDevice parent_obj;
++
++	int interval;		// millisecond
++} USBKmodEduState;
++
++enum {
++    STR_MANUFACTURER = 1,
++    STR_PRODUCT,
++    STR_SERIALNUMBER,
++};
++
++static const USBDescStrings desc_strings = {
++    [STR_MANUFACTURER]     = "QEMU",
++    [STR_PRODUCT]          = "Kernel Module Deucational Device",
++    [STR_SERIALNUMBER]     = "1",
++};
++
++
++static const USBDescIface desc_iface_kmod_edu = {
++    .bInterfaceNumber              = 0,
++    .bNumEndpoints                 = 3,
++    .bInterfaceClass               = USB_CLASS_VENDOR_SPEC, //USB_CLASS_HID,
++    .bInterfaceSubClass            = 0xff, /* boot */
++    .bInterfaceProtocol            = 0xff,
++    .eps = (USBDescEndpoint[]) {
++        {
++            .bEndpointAddress      = USB_DIR_IN | 0x01,
++            .bmAttributes          = USB_ENDPOINT_XFER_BULK,
++            .wMaxPacketSize        = BULK_PACKET_SIZE,
++        },
++        {
++            .bEndpointAddress      = USB_DIR_OUT | 0x02,
++            .bmAttributes          = USB_ENDPOINT_XFER_BULK,
++            .wMaxPacketSize        = BULK_PACKET_SIZE,
++        },
++        {
++            .bEndpointAddress      = USB_DIR_IN | 0x03,
++            .bmAttributes          = USB_ENDPOINT_XFER_INT,
++            .wMaxPacketSize        = INT_PACKET_SIZE,
++            .bInterval             = 0x0a,
++        },
++    },
++};
++
++static const USBDescDevice desc_device_kmod_edu = {
++    .bcdUSB                        = 0x0110,
++    .bMaxPacketSize0               = 8,
++    .bNumConfigurations            = 1,
++    .confs = (USBDescConfig[]) {
++        {
++            .bNumInterfaces        = 1,
++            .bConfigurationValue   = 1,
++            .bmAttributes          = USB_CFG_ATT_ONE,
++            .bMaxPower             = 50,
++            .nif = 1,
++            .ifs = &desc_iface_kmod_edu,
++        },
++    },
++};
++
++static const USBDesc desc_kmod_edu = {
++    .id = {
++        .idVendor          = 0x1234,
++        .idProduct         = 0x7863,
++        .bcdDevice         = 0x4210,
++        .iManufacturer     = STR_MANUFACTURER,
++        .iProduct          = STR_PRODUCT,
++        .iSerialNumber     = STR_SERIALNUMBER,
++    },
++    .full = &desc_device_kmod_edu,
++    // .high = &desc_device_kmod_edu,
++    // .super = &desc_device_kmod_edu,
++    .str  = desc_strings,
++};
++
++static void usb_kmod_edu_unrealize(USBDevice *dev)
++{
++	USBKmodEduState *us = USB_KMOD_EDU(dev);
++	us->interval = 500;
++}
++
++static void usb_kmod_edu_realize(USBDevice *dev, Error **errp)
++{
++	usb_desc_create_serial(dev);
++	usb_desc_init(dev);
++}
++
++static void usb_kmod_edu_handle_reset(USBDevice *dev)
++{
++}
++
++static void usb_kmod_edu_handle_control(USBDevice *dev, USBPacket *p,
++               int request, int value, int index, int length, uint8_t *data)
++{
++	int ret;
++
++	ret = usb_desc_handle_control(dev, p, request, value,
++				      index, length, data);
++	if (ret >= 0) {
++		return;
++	}
++
++	return;
++}
++
++static void usb_kmod_edu_handle_data(USBDevice *dev, USBPacket *p)
++{
++	static time_t t;
++	static uint32_t intv = 1;
++	time_t cur_t;
++	int i;
++	struct tm *tm;
++	struct iovec *iov;
++	uint32_t int_data[2] = { 0, 0 };	// int_data[0]: flag, int_data[1]: intv
++	char buf[64] = { 0 };
++
++	switch (p->pid) {
++	case USB_TOKEN_OUT:
++		for (i = 0; i < p->iov.niov; i++) {
++			iov = p->iov.iov + i;
++			intv = *((uint32_t*)(iov->iov_base));
++		}
++		p->actual_length = p->iov.size;
++		break;
++	case USB_TOKEN_IN:
++		if (p->ep->nr == 1) {
++			// bulk in ep
++			tm = localtime(&t);
++			i = strftime(buf, 64, "%F %T", tm);
++			i = MIN(i + 1, p->iov.size);
++			usb_packet_copy(p, buf, i);
++		} else if (p->ep->nr == 3) {
++			// interrupt in ep
++			cur_t = time(NULL);
++			if (cur_t >= t + intv) {
++				t = cur_t;
++				int_data[0] = 1;
++			} else {
++				int_data[0] = 0;
++			}
++
++			int_data[1] = intv;
++
++			usb_packet_copy(p, &int_data, sizeof(int_data));
++		}
++		break;
++
++	default:
++		p->status = USB_RET_STALL;
++		break;
++    }
++}
++
++static void usb_kmod_edu_class_initfn(ObjectClass *klass, void *data)
++{
++	DeviceClass *dc = DEVICE_CLASS(klass);
++	USBDeviceClass *k = USB_DEVICE_CLASS(klass);
++
++	k->product_desc	  = "QEMU virtual devcie for kernel module study";
++	k->usb_desc       = &desc_kmod_edu;
++	k->realize        = usb_kmod_edu_realize;
++	k->handle_reset	  = usb_kmod_edu_handle_reset;
++	k->handle_control = usb_kmod_edu_handle_control;
++	k->handle_data    = usb_kmod_edu_handle_data;
++	k->unrealize      = usb_kmod_edu_unrealize;
++	set_bit(DEVICE_CATEGORY_MISC, dc->categories);
++}
++
++static const TypeInfo usb_kmod_edu_info = {
++	.name          = TYPE_USB_KMOD_EDU,
++	.parent        = TYPE_USB_DEVICE,
++	.instance_size = sizeof(USBKmodEduState),
++	.class_init    = usb_kmod_edu_class_initfn,
++};
++
++static void usb_kmod_edu_register_types(void)
++{
++	type_register_static(&usb_kmod_edu_info);
++	usb_legacy_register(TYPE_USB_KMOD_EDU, "kmod_edu", NULL);
++}
++
++type_init(usb_kmod_edu_register_types)
+-- 
+2.24.2 (Apple Git-127)
+
