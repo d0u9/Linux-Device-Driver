@@ -131,6 +131,40 @@ protocol in userspace is true for new kernels.
 
 ## Versioning
 
+Before kernel version 3.0, Linux opts a regular versioning scheme that the
+version number are divied into four parts with dots as delimiters, i.e.
+**w.x.y.z**. w is the major version, x is the minor version, y is the
+revision and z is patch number. Under this versioning scheme, Linux kernels
+distinguish between stable and development kernel with a simple manner. The
+even or odd minor version points to stable or development kernel separately.
+Sometimes, the fourth number is used as a mark for differentiating stable or
+development version of kernel; only the stable kernel has the forth number.
+
+For a long time, Linux uses this formula scheme until version 3.0 is in coming.
+Linus, the creator and curator of Linux, utilize a new scheme base on timeline
+that the odd and even number versioning scheme is abandoned. The new versioning
+scheme, according to Linus' note, upgrades major number each time when running
+out its fingers and toes to count.
+
+The new scheme takes the first two numbers as a whole to indicates the major
+version. Each circle a new merge-window is opened for accepting patches prepared
+for next release. During the period of merge-window opening, only code is deemed
+to be sufficiently stable is merge into the mainline kernel. This window opens
+for approximately two weeks. At the end of the window, Linus Torvalds will
+declare that the window is closed and release the first of the "rc" kernels.
+
+"rc" is the abbreviation of release candidate. rc version is distinguish with
+suffix of "-rcN", which indicates the "Nth" of the candidate. During the roll of
+"rc" versions, only bug fix patches are accepted. New features or new drivers
+is not welcome at this time. Linus is responsible for rolling this "rc" versions
+until a point that the code is believed stable enough. Then, a new stable
+kernel is spawned, a new circle is started.
+
+If contributor luckily misses the merge-window, the best thing he may do is
+waiting for next circle. However, this rule is not unbreakable, emergency fixes
+or patched to fatal securities problem is permitted to merge into even the
+merge-window is closed.
+
 ## Loadable Modules
 
 # ¶ The end
