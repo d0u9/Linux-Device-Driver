@@ -167,6 +167,34 @@ merge-window is closed.
 
 ## Loadable Modules
 
+Even Linux is "monolithic", it still supports dynamic insertion and removal of
+code at runtime without re-compiling or rebooting the kernel. Loadable modules
+is type of special binary file, which is usually named with suffix ".ko" (
+abbreviation of Kernel object"). Internally, loadable modules uses ELF
+relocatable binary format. It works almost the same as dynamic link library in
+userspace, which can be dynamically loaded and unloaded into memory on demand.
+However, due to the particularity of kernel, Linux implements its own mechanism
+to insert and remove such loadable files into kernel space.
+
+How to load ko files resident in userspace into kernelspace, and arrange its
+memory layout in kernel is out of the scope of this book. The only thing the
+developer has to keep in mind is that the code written for kernel modules is
+finally loaded and run in kernel space. It means (1) the flaws in module can 
+crash the whole system; (2) Have high permission to access almost any resource
+in kernel, which maybe cause severe security issues; (3) No any usersapce
+standard libraries can be referenced in module, e.g. glibc.
+
+It is developer's duty to keep module consistent and insistent for that upgrade
+of modules won't break the APIs. Bugs, too, is unbearable in kernel modules. As
+mentioned before, modules run in kernelspace, any fatal bug can cause system
+halt, such as deference an invalid pointer or deadlock.
+
+Linux device driver is subset of loadable modules, usually. Actually, almost all
+device drivers can be compiled as a loadable module, and loaded dynamically on
+demand. However, aside from driving devices, the ability loadable modues can
+have is far beyond. Filesystem support, network traffic control policy can
+be implemented as a loadable module as well.
+
 # ¶ The end
 
 ---
