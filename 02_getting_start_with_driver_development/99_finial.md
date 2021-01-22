@@ -34,7 +34,7 @@ ip link set lo up
 sleep 0.5
 
 # Mount NFS
-mount -t nfs -o nolock host_machine:/home/doug/LDD_ROOT/nfs_dir /mnt
+mount -t nfs -o nolock host_machine:/home/doug/LDD_ROOT /mnt
 
 # Start telnet service
 telnetd -l /bin/sh

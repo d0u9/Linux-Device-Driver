@@ -1,0 +1,240 @@
+# Hello World Module
+
+## Source code
+
+Finially, we reach the point that some programming will be made. The first
+program, like in any other programming books, is a simple "Hello World" program.
+However, the difference is that our hello world code is running insdie
+kernelspace rather than userspace.
+
+The code is fairly simple
+
+```C
+#include <linux/module.h>
+
+static int __init m_init(void)
+{
+	printk(KERN_ALERT "Hello, world!\n");
+	return 0;
+}
+
+static void __exit m_exit(void)
+{
+	printk(KERN_ALERT "Bye, world!\n");
+}
+
+module_init(m_init);
+module_exit(m_exit);
+
+MODULE_LICENSE("GPL");
+MODULE_AUTHOR("Douglas Su");
+MODULE_DESCRIPTION("Hello World program");
+```
+
+Put this source file an in empty directory, and name it the `main.c`.
+
+It is a quite simple example with just a few lines of code there. This code is
+self-explained for that only two functions are defined with meaningful name that
+points out what the function does. A few of special macros are used to tell the
+kernel how to run this module and what extra information this module contains.
+
+Briefly, this module starts its journal in the function of `m_init()`, and ends
+in the function of `m_exit()`. Two macros, `module_init()` and `module_exit()`,
+bridge our module's function to the kernel.
+
+Like in userspace we have a `printf()` function for dumping messages to a
+terminal, the kernel has its own print function named `printk()`. Yes, the
+suffix 'k' stands for kernel. Knowing the difference of `printf()` in userspace
+and `printk()` in kernelspace has no contribution to our understanding of how 
+to load and unload a kernel. So, we skip talking about it here, and give more
+details later.
+
+Any programming interface exported by kernel are attributed to a set or
+a single header file. For different device driver, it will request different
+resource from kernel, and different header files are included in source code.
+Header file `linux/module.h` contains functions and macros that are very basic
+for almost every kernel module.
+
+## Build
+
+Like any C projects, include the Linux kernel itself, there is one or more
+Makefiles exist, which tell the fact that how to piece each source file
+together. For a technically speaking, the compiling and linking process.
+
+```
+KERNELDIR ?= /lib/modules/$(shell uname -r)/build
+PWD := $(shell pwd)
+
+hello_world-objs := main.o
+obj-m := hello_world.o
+
+.PHONY: modules
+modules:
+        $(MAKE) -C $(KERNELDIR) M=$(PWD) modules
+```
+
+It is not a very concise Makefile, alright? We will talk this later. For now,
+just copy and paste it in the same directory where the C file locates.
+
+Then, build the first kernel module by running `make` command. Be cautious, the
+working directory in the moment of running `make` command must be the folder
+that contains the Makefile and source file. 
+
+Loadable module file, suffixed with '.ko', will be created if no error was
+reported by `make` command. For curious readers who wondering the format of
+module file, the result returned by using `file` command to inspect our `.ko`
+file shows that module file is an ELF relocatable file indeed.
+
+## Load and Test
+
+There are two common commands used for loading a module file into kernel. One
+is `modprobe` which is used mostly. Another is `insmod` which is trivial and
+simple. For most scenarios, `modprobe` is the best choice for that it is more
+clever and can handle module dependencies. `modprobe` looks in the module
+directory `/lib/modules/$(uname -r)` for all the modules and other files, except
+for the optional configuration files in the `/etc/modprobe.d` directory. In our
+"hello world" module, however, `insmod` is a good choice, since it is simple and
+straightforward as its name implies: insert a module file into kernel.
+
+```bash
+# Use insmod to insert hello-world module into kernel.
+insmod hello_world.ko
+```
+
+The `m_init()` function in our sample code will be immediately invoked and
+executed as along as module file is loaded successfully. In that function,
+a string message is printed via `printk()` function. Messages dumped via
+`printk()` function are written to a internal circular buffer in the kernel.
+Usespace tools, such as `dmesg`, can fetch there kernel messages and print
+them in the control terminal.
+
+```bash
+dmesg
+```
+
+Maybe, in this time after execution of `dmesg` command, your screen are flooded
+by various messages, and our "Hello, world!" string is displayed in the end.
+Messages other than "Hello, world!" string are that which are printed by various
+part of kernel and modules since boot up. If your message buffer is not overrun,
+initialization information during the very begin time of booting kernel may be
+found at the beginning of dumped message.
+
+## Unload module
+
+`modprobe` command can also be used in unloading a kernel module. But, for
+simplicity, `rmmod` is used here. `rmmod` is the twin of `insmod` which do a
+task of removing kernel module from kernel, opposite to its counterpart `insmod`
+command.
+
+```
+rmmod hello_world
+```
+
+`rmmod` accepts an parameter that is not the file name of module, but the module
+name registered in kernel. For our sample, the module name is same as the file
+name of module except the `.ko` suffix.
+
+Execution of `rmmod` command sometimes may failed. It is often due to that
+resource monopolized by this module is still in busy.
+
+// TODO: talk about m_exit() function
+
+
+## Test in QEMU guest
+
+As mentioned in previous sections, samples in this book can be played and tuned
+in a QEMU virtual machine, in which we set up a simple system based on busybox
+and initramfs. For some Linux users, it seems very redundant of developing
+modules in a guest machine, because all tests can be run and tested directly on
+the host. But, due to the distinct difference between the kernel module and the
+userspace program, developers can gain a lot from using virtual machine. The
+first bonus of developing in a virtual guest is that system crash caused by
+module flaws won't affect the state of host machine. Kernel panic is horrible.
+It may cause deadly result to a system, such as file lost or system broken down.
+Second, using virtual machine makes it very convenient to test a kernel module
+in multiple kernels with different version. Third, for device driver developer,
+sometime, there is a ready hardware on which a driver will be developed. For
+this situation, write a simple virtual hardware for driver test is fairly
+convenient.
+
+In previous, we have set up a QEMU virtual machine, and mounted nfs in it for
+file sharing between the host and guest. To test "hello world" module, follow
+steps below:
+
+1. On host machine, recompile module against kernel 5.10, which is the version
+used in guest.
+
+```
+make KERNELDIR=$LDD_ROOT/kernels/linux-5.10.4
+```
+
+2. load and test in guest:
+
+```bash
+# This is an auxiliary shell script created before.
+qemu_run.sh
+
+# Change to the NFS sharing direcotry. It is mounted at /mnt directory.
+cd /mnt
+
+# Change to our example directory
+# TODO: modify this path
+cd /mnt/Linux-Device-Driver/eg_01_hello_world
+
+# Insert module
+insmod hello_world.ko
+
+# Verify via dmesg
+dmesg
+```
+
+// TODO: explain why message is printed instantly.
+
+To unload module, use `rmmod` command
+
+```
+rmmod hello_world
+```
+
+## Details in code
+
+There are two functions defined in our hello world module, one is constructor
+function and another is destructor function. Constructor function is invoked
+when the module is loaded into the kernel, and destructor function is invoked
+when the module is removed from the kernel. Unlike C programs in the userspace,
+there is no `main()` function or alike in kernel module source. The entry point
+of our own logical is the function which is passed as a variable to
+`module_init()` macro. Also, unlike userspace programs, the kernel won't help us
+to free any resources that was allocated during the running of our module. So,
+that is why a macro called `module_exit()` which accepts an function as its
+parameter exists. Function passed to this macro acts as a destructor in which
+various resources will be freed, such as memory requested from system or any
+registered handlers of hardware.
+
+Another macro which has mentioned before is `MODULE_LICENSE()`. It is used to
+tell the kernel what the license this module opts. Any interface exported as GPL
+licensed in kernel are usage prohibited in kernel module whose module license is
+"Proprietary".
+
+`MODULE_AUTHOR()` declares the author of this module, and `MODULE_DESCRIPTION()`
+describes what the module does. Information declared in these two macros are
+embedded in the final `.ko` binary file, and can be view via `modinfo` command
+in userspace. We will see this in detail later.
+
+Header file of `linux/module.h` contains functions and macros that are essential
+to kernel module programming. Every kernel module needs this header file with
+no exception. This header file includes other necessary header files recursively
+which are used during the compiling, loading and running time of the module's
+whole life span.
+
+Another noticeable point is the use of `__init` and `__exit` markers. Similarly,
+there are two makers, `__initdata` and `__exitdata`, for variables other than
+functions. All these markers give clues to module loader that the functions or
+variables marked with are only be used during the loading or unloading time. In
+our example, function `m_init()` is used only once during the loading period of
+module, and then it fulfilled its mission and can be removed from memory. `
+
+
+
+
+

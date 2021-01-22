@@ -31,7 +31,7 @@ Setup NFS server to export working directory:
 
 ```bash
 sudo bash -c "echo \
-    '$LDD_ROOT/nfs_dir        127.0.0.1(insecure,rw,sync,no_root_squash)' \
+    '$LDD_ROOT        127.0.0.1(insecure,rw,sync,no_root_squash)' \
     >> /etc/exports"
 ```
 
@@ -47,7 +47,7 @@ mount -t nfs -o nolock host_machine:/path/to/working/directory /mnt
 ```
 
 The actual value of `/path/to/working/directory` is the result of evaluation of
-`$LDD_ROOT/nfs_dir`. Due to the fact that executing the mount command in QEMU
+`$LDD_ROOT`. Due to the fact that executing the mount command in QEMU
 guest, reference to this environment variable is not working. Type it manually
 in QEMU's terminal is needed.
 
