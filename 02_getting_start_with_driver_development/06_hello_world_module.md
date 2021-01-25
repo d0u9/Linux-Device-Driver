@@ -62,12 +62,11 @@ Makefiles exist, which tell the fact that how to piece each source file
 together. For a technically speaking, the compiling and linking process.
 
 ```
-hello_world-objs := main.o
-obj-m := hello_world.o
+obj-m := main.o
 ```
 
-It is a very concise Makefile, alright? For simple cases like our "hello world"
-example, it is sufficient. For now, just copy and paste it in the same directory
+Pretty simple, alright? For simple projects with one source file like our
+"hello world" example, it is sufficient. Copy and paste it in the same directory
 where the C file locates.
 
 
