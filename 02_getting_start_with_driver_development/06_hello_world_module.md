@@ -62,23 +62,30 @@ Makefiles exist, which tell the fact that how to piece each source file
 together. For a technically speaking, the compiling and linking process.
 
 ```
-KERNELDIR ?= /lib/modules/$(shell uname -r)/build
-PWD := $(shell pwd)
-
 hello_world-objs := main.o
 obj-m := hello_world.o
-
-.PHONY: modules
-modules:
-        $(MAKE) -C $(KERNELDIR) M=$(PWD) modules
 ```
 
-It is not a very concise Makefile, alright? We will talk this later. For now,
-just copy and paste it in the same directory where the C file locates.
+It is a very concise Makefile, alright? For simple cases like our "hello world"
+example, it is sufficient. For now, just copy and paste it in the same directory
+where the C file locates.
 
-Then, build the first kernel module by running `make` command. Be cautious, the
-working directory in the moment of running `make` command must be the folder
-that contains the Makefile and source file. 
+
+Then, build the first kernel module by running command below in your shell. Be
+cautious, the working directory in the moment of running `make` command must be
+the folder that contains the Makefile and source file. 
+
+```
+make -C /lib/modules/$(uname -r)/build M=$(pwd) modules
+```
+
+In the command above, a special make variable `M` is passed, which points to
+the directory that Makefile itself residents by assigning via `$(pwd)`. Besides,
+`-C` option instructs make to read Makefiles in `/lib/modules/$(uname -r)/build`
+instead of own Makefile. Finally, `modules` is our build target here. Feel
+strange alright? The Makefile we created before seems not be used at all. This
+is due to difference of compiling kernel module. We will talk this in later
+chapters.
 
 Loadable module file, suffixed with '.ko', will be created if no error was
 reported by `make` command. For curious readers who wondering the format of
@@ -165,7 +172,8 @@ steps below:
 used in guest.
 
 ```
-make KERNELDIR=$LDD_ROOT/kernels/linux-5.10.4
+make -C ~/LDD_ROOT/kernels/linux-5.10.4 M=$(pwd) modules
+
 ```
 
 2. load and test in guest:
