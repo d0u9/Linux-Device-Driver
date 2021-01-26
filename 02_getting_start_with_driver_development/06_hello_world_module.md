@@ -31,7 +31,7 @@ MODULE_AUTHOR("Douglas Su");
 MODULE_DESCRIPTION("Hello World program");
 ```
 
-Put this source file an in empty directory, and name it the `main.c`.
+Put this source file an in empty directory, and name it the `hello_world.c`.
 
 It is a quite simple example with just a few lines of code there. This code is
 self-explained for that only two functions are defined with meaningful name that
@@ -62,7 +62,7 @@ Makefiles exist, which tell the fact that how to piece each source file
 together. For a technically speaking, the compiling and linking process.
 
 ```
-obj-m := main.o
+obj-m := hello_world.o
 ```
 
 Pretty simple, alright? For simple projects with one source file like our
@@ -172,7 +172,6 @@ used in guest.
 
 ```
 make -C ~/LDD_ROOT/kernels/linux-5.10.4 M=$(pwd) modules
-
 ```
 
 2. load and test in guest:

@@ -1,22 +1,22 @@
-# If KERNELRELEASE is defined, we've been invoked from the
-# kernel build system and can use its language.
 ifneq ($(KERNELRELEASE),)
-    hello_world-objs := main.o
-    obj-m := hello_world.o
 
-# Otherwise we were called directly from the command
-# line; invoke the kernel build system.
+# In kbuild context
+module-objs := hello_world.o
+obj-m := hello_world.o
+
+CFLAGS_hello_world.o := -DDEBUG
+
 else
-    KERNELDIR ?= /lib/modules/$(shell uname -r)/build
-    PWD := $(shell pwd)
+# In normal make context
+KDIR ?= /lib/modules/$(shell uname -r)/build
+PWD := $(shell pwd)
 
 .PHONY: modules
 modules:
-	$(MAKE) -C $(KERNELDIR) M=$(PWD) modules
-endif
+	$(MAKE) -C $(KDIR) M=$(PWD) modules
 
 .PHONY: clean
 clean:
-	$(MAKE) -C $(KERNELDIR) M=$(PWD) clean
+	$(MAKE) -C $(KDIR) M=$(PWD) clean
 
-CFLAGS_main.o := -DDEBUG
+endif
