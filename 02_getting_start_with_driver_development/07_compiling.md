@@ -243,5 +243,49 @@ it can be specified by adding `ccflags-y := -std=gnu99` in your Makefile's
 kbuild context domain, or adding `CFLAGS_source1.o := -std=gnu99` if want to
 apply this flag only to compiling `source1.o`.
 
+## Makefile targets
+
+A few of make targets are available when building an external module.
+
+- `modules`:
+
+    This is the default target for building an external module. It means that
+    make will opt `modules` as its target if no any target is specified.
+
+- `modules_install`:
+
+    Install the external module just be built. By default, `modules_install`
+    target uses `/lib/modules/($uname -r)/extra/` directory as its installation
+    location. Users can point to its own installation path by feeding a special
+    variable, `INSTALL_MOD_PATH`, to make command. For example, to install
+    generated `.ko` file in `/kmods`:
+
+    ```
+    make INSTALL_MOD_PATH=/kmods` modules_install
+    ```
+
+    The `.ko` file, say `hello_world.ko`, will appear in
+    `/kmods/lib/modules/$(uname -r)/extra/`
+
+
+- `clean`:
+
+    Remove all genereated files in the module directory.
+
+
+- `help`:
+
+    Dump a help message.
+
+
+Usage of these targets is simple; we have seen the example of `modules` target
+before in the processing of building "hello_world" module. A more formulatic
+description is given below for a quick reference.
+
+```
+make -C $KDIR M=$PWD [target]
+```
+
+Replace target with any one listed above according to your need.
 
 # ¶ The end
