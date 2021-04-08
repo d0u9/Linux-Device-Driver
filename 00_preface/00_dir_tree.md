@@ -30,6 +30,7 @@ tree -L 1 -d $LDD_ROOT
 │   └── linux-5.10.4
 ├── initramfs               # Directory containing files to build initramfs image.
 ├── nfs_dir                 # Directory which is shared between host and QEMU via NFS protocol.
+│   └── Linux-Device-Driver # This is our example repo.
 └── qemu                    # The QEMU source files, git cloned from official repo
 ```
 
@@ -42,5 +43,18 @@ export PATH="$PATH:$LDD_ROOT/bin"
 ```
 
 Append the line above in your your shell's `rc` file.
+
+# Make necessary directories
+
+```
+mkdir $LDD_ROOT/{bin,nfs_dir}
+```
+
+# Clone this repo in proper location
+
+```
+cd $LDD_ROOT/nfs_dir
+git clone https://github.com/d0u9/Linux-Device-Driver.git
+```
 
 # ¶ The end
