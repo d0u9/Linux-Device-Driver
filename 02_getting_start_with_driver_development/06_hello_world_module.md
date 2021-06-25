@@ -31,7 +31,7 @@ MODULE_AUTHOR("Douglas Su");
 MODULE_DESCRIPTION("Hello World program");
 ```
 
-Put this source file an in empty directory, and name it the `hello_world.c`.
+Put this source file in an empty directory, and name it `hello_world.c`.
 
 It is a quite simple example with just a few lines of code there. This code is
 self-explained for that only two functions are defined with meaningful name that

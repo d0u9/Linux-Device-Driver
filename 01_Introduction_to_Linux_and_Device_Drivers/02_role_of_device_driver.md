@@ -42,4 +42,24 @@ In a word, device driver is a pieces of code, which can be compiled inside or
 outside the kernel and can be loaded during boot time or at runtime, running in
 kernel space and bridging the gap between the kernel and specific devices.
 
+------ TODO: more introduction to Rust in Kernel
+
+Historically, Linux modules are written in C as the other part of Linux Kernel.
+However, due to the deficiencies of C language, especially in memory safety,
+some hackers start to using Rust, a programming language originally developed
+by Mozilla, as the second programming language in Linux Kernel. At the time
+I am writing this book, Rust in Linux is still an infant, and is not fully
+accepted by upstream, even some prestigious maintainers, include Linus Torvalds
+who said "I don't hate it" on the topic of Rust in Linux in the LKML, performs
+optimistic attitude.
+
+Until now, Jun 25, 2021, there is still a lot of work have to do in integrating
+Rust in the Kernel. Currently, the most challenge work is refatoring memory
+alloctor.
+
+There is another repo of mine, [Linux-Device-Driver-Rust], details how Rust
+is integrated in the Kernel.
+
+[Linux-Device-Driver-Rust]: https://github.com/d0u9/Linux-Device-Driver-Rust]
+
 # ¶ The end
