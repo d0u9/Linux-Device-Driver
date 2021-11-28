@@ -90,6 +90,13 @@ out examples.
 make -j bzImage
 ```
 
+### Generate linker scripts for out of tree builds
+Required for examples to compile
+```
+make prepare
+make modules_prepare
+```
+
 # ¶ The end
 
 [The Linux Kernel Archives]: https://www.kernel.org/
