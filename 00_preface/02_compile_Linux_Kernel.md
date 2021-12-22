@@ -88,6 +88,9 @@ out examples.
 
 ```
 make -j bzImage
+
+# Generate Module.symvers file
+make -j modules
 ```
 
 # ¶ The end
