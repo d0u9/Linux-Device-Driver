@@ -69,7 +69,8 @@ To map port 23 of telnet to 7023 on the host, append the option below to your
 QEMU command:
 
 ```bash
--net nic,model=e1000 -net user,hostfwd=tcp::7023-:23 \
+-netdev user,id=host_net,hostfwd=tcp::7023-:23 \
+-device e1000,mac=52:54:00:12:34:50,netdev=host_net \
 ```
 
 These options instruct QEMU to use e1000 NIC, and map tcp port 7023 on host to
