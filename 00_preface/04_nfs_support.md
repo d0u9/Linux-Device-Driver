@@ -20,6 +20,13 @@ sudo apt-get install nfs-kernel-server
 
 For other Linux distributions, consult the manual for help.
 
+For Fedora: 
+
+```bash
+sudo dnf -y install nfs-utils
+sudo systemctl enable --now rpcbind nfs-server
+```
+
 Setup NFS server to export working directory:
 
 ```bash

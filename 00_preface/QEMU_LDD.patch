@@ -43,10 +43,11 @@ new file mode 100644
 index 0000000000..a5966ee6a2
 --- /dev/null
 +++ b/hw/misc/isa_kmod_edu.c
-@@ -0,0 +1,184 @@
+@@ -0,0 +1,185 @@
 +#include "qemu/osdep.h"
 +#include "hw/isa/isa.h"
 +#include "hw/qdev-properties.h"
++#include "hw/qdev-properties-system.h"
 +#include "chardev/char-fe.h"
 +#include "qapi/error.h"
 +#include "sysemu/reset.h"
@@ -183,7 +184,7 @@ index 0000000000..a5966ee6a2
 +	if (edu->mmiobase == -1)
 +		edu->mmiobase = MMIO_BASE;
 +
-+	isa_init_irq(isadev, &edu->irq, edu->isairq);
++    edu->irq = isa_get_irq(isadev, edu->isairq);
 +	qemu_register_reset(isa_kmod_edu_reset, edu);
 +
 +	isa_mm = isa_address_space(isadev);
@@ -245,7 +246,7 @@ new file mode 100644
 index 0000000000..7c00d60bd6
 --- /dev/null
 +++ b/hw/misc/pci_kmod_edu.c
-@@ -0,0 +1,196 @@
+@@ -0,0 +1,195 @@
 +#include "qemu/osdep.h"
 +#include "qemu/module.h"
 +#include "hw/pci/pci.h"
@@ -446,16 +447,18 @@ diff --git a/hw/usb/Kconfig b/hw/usb/Kconfig
 index 7fbae18bc8..f5e26d9a8e 100644
 --- a/hw/usb/Kconfig
 +++ b/hw/usb/Kconfig
-@@ -112,3 +112,9 @@ config IMX_USBPHY
+@@ -122,6 +122,11 @@ config IMX_USBPHY
      bool
      default y
      depends on USB
-+
+
 +config USB_KMOD_EDU
 +    bool
 +    default y if TEST_DEVICES
 +    depends on USB
 +
+ config USB_DWC3
+     bool
 diff --git a/hw/usb/meson.build b/hw/usb/meson.build
 index 934e4fa675..61f82dc13c 100644
 --- a/hw/usb/meson.build

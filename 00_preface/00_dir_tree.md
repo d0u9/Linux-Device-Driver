@@ -22,7 +22,7 @@ for a quick reference.
 # List of directory
 
 ```
-tree -L 1 -d LDD_ROOT
+tree -L 1 -d $LDD_ROOT
 
 ../../
 ├── bin                     # Symbolic links of all executable binary files.

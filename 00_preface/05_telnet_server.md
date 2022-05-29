@@ -6,7 +6,7 @@
 > control information in an 8-bit byte oriented data connection over the
 > Transmission Control Protocol (TCP).
 
-Sometimes, the ability to login into guest system for debuging is essential.
+Sometimes, the ability to login into guest system for debugging is essential.
 This ability helps to run multiple processes in different terminal. For
 example, when testing FIFO device driver, two or more terminals are needed
 in which processes fetching and feeding data to and from FIFO device 
@@ -19,9 +19,9 @@ login is fairly easy.
 busybox contains a telnet server, i.e `telnetd`. We cannot directly use
 `telnetd` command to start telnet server if we have not set pty properly.
 
-The telenet server in Busybox is command `telentd`; it is not a fully functional
+The telnet server in Busybox is command `telnetd`; it is not a fully functional
 service of telnet, which only provides fundamental functionalities. To use
-Busybox's `telentd` command, a **pts** device node must exist.
+Busybox's `telnetd` command, a **pts** device node must exist.
 
 # Setup pts device node
 
@@ -33,7 +33,7 @@ mknod -m 666 dev/ptmx c 5 2
 ```
 
 Automatically mount devpts device during boot time. Append the line below to
-`init` script.
+`init` script after the nfs mount line.
 
 
 ```bash
@@ -91,7 +91,7 @@ connection.
 On host side, connect to QEMU guest by running:
 
 ```
-telent localhost 7023
+telnet localhost 7023
 ```
 
 Successfully, the guest's shell promotion will be seen in your terminal. If

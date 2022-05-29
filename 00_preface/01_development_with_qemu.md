@@ -35,6 +35,18 @@ compiling [QEMU] from source is necessary.
 
 ## Download and patch QEMU
 
+Install ninja-build with dnf or apt.
+
+```
+sudo dnf -y install ninja-build
+```
+
+Qemu will also require the following packages installed:
+
+```
+sudo dnf -y install libcap-ng-devel libattr-devel
+```
+
 Download QEMU source from official git:
 
 Note: For new, QEMU 5.2.0 is used through this repo
@@ -42,16 +54,16 @@ Note: For new, QEMU 5.2.0 is used through this repo
 ```
 git clone https://git.qemu.org/git/qemu.git
 cd qemu
-git checkout v5.2.0
+# The following line is an older version of QEMU. QEMU_LDD.patch has been updated for 7.0.50.
+# git checkout v5.2.0
 git submodule init
 git submodule update --recursive
 ```
 
-
 Apply QEMU patch for adding new hardwares:
 
 ```
-git am QEMU_LDD.patch
+git am ../00_preface/QEMU_LDD.patch
 ```
 
 ## Build QEMU
@@ -80,6 +92,7 @@ cd build
     --disable-strip \
     --disable-docs
 make -j
+# only do this line if you actually want to install QEMU otherwise note the instructions about setting up in $LDD_ROOT/bin
 make install
 ```
 

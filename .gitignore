@@ -38,3 +38,13 @@
 *.order
 .tmp_versions
 *.swp
+*.mod
+
+# ignore directories created underneath for builds
+qemu/
+kernel/
+kernels/
+bin/qemu
+initramfs/
+initramfs.cpio.gz
+nfs_dir/
