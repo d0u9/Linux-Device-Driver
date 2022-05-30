@@ -10,27 +10,27 @@ needs a full Linux distribution to be installed in to boot the whole system.
 The drawback of lacking flexibility introduces low production efficiency. An
 alternative to [VirtualBox] is [QEMU], a generic and open source machine
 emulator and virtualizer which is widely used in production environment. It is
-powerful as [VritualBox] but more lightweight and convenient, since users are
-granted the ability to develop their own virtual hardwares easy and fast.
+powerful as [VirtualBox] but more lightweight and convenient, since users are
+granted the ability to develop their own virtual hardware easy and fast.
 
 The most attractive feature QEMU provided is the command line option `-kernel`.
 This option permits it users to feed a given Linux kernel without installing it
 in the disk image. In other words, developer need not to install a full Linux
-distribution, only the Kerenl image and initial ram disk are necessary to boot
+distribution, only the Kernel image and initial ram disk are necessary to boot
 the whole system, fast and convenient.
 
 # Install QEMU
 
-Install [QEMU] is simple, its official website details all the procedures to
+Installing [QEMU] is simple, its official website details all the procedures to
 install a fresh [QEMU] on your host. On most Linux distributions, the package
 manager, e.g. apt or rpm, is a good friend to install necessary software.
 However, some cutting edge versions or a custom version of software must be
 installed via manually compiling from source.
 
-For the examples presented in this repo, some special virtual hardwares re
-prerequisite. In the chapter of I/O operations and the chapter of interrupt,
-virtual hardwares are essential to response the requests from driver and give
-feedbacks. For the purpose of functioning all pieces of code in this repo,
+For the examples presented in this repo, some special virtual hardware is
+prerequisite. In the chapter of I/O operations and the chapter on interrupts,
+virtual hardware are essential to respond to the requests from the driver and receive
+feedback. For the purpose of using all pieces of code in this repo,
 compiling [QEMU] from source is necessary.
 
 ## Download and patch QEMU
@@ -100,7 +100,7 @@ ln -s ../qemu/build/qemu-system-x86_64 qemu
 ## Test
 
 
-When the building process finished, run the command below to test if it works
+When the building process is finished, run the command below to test if it works
 properly.
 
 ```
