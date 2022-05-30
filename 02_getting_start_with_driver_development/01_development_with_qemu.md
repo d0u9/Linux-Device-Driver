@@ -1,37 +1,38 @@
 # Develop Linux Driver with QEMU
 
-To eliminate to the differences between physical hosts on which the reader make
-their development, it is better to use a virtual machine instead. [VirtualBox]
-is a powerful x86 and AMD64/Intel64 virtualization toolbox for enterprise as
-well as home use. [VirtualBox] does be powerful and comprehensive, but it lacks
-the ability to setup a minimal development environment for driver debugging, and
-needs a full Linux distribution to be installed in to boot the whole system.
+It is better to opt virtual machine instead to eliminate the peculiarities of
+physical hosts on which readers test the examples. [VirtualBox] is a powerful
+x86 and AMD64/Intel64 virtualization toolbox for enterprises and home users.
+[VirtualBox] is powerful and comprehensive; however, it lacks the ability to
+set up a minimal development environment for driver debugging and needs a
+complete Linux distribution installed to boot up.
 
 The drawback of lacking flexibility introduces low production efficiency. An
 alternative to [VirtualBox] is [QEMU], a generic and open source machine
-emulator and virtualizer which is widely used in production environment. It is
-powerful as [VirtualBox] but more lightweight and convenient, since users are
-granted the ability to develop their own virtual hardware easy and fast.
+emulator and virtualizer widely used in the production environment. It is as
+powerful as [VirtualBox] but is more lightweight and convenient since users can
+develop their own virtual hardware easy and fast.
 
 The most attractive feature QEMU provided is the command line option `-kernel`.
-This option permits it users to feed a given Linux kernel without installing it
-in the disk image. In other words, developer need not to install a full Linux
-distribution, only the Kernel image and initial ram disk are necessary to boot
-the whole system, fast and convenient.
+This option allows the user to feed a given Linux kernel directly from the
+command line without installing it in the disk image. In other words, the
+developer doesn't need to install a complete Linux distribution; instead, only
+the Kernel image and an initial ramdisk are necessary to boot the whole system,
+fast and convenient.
 
 # Install QEMU
 
-Installing [QEMU] is simple, its official website details all the procedures to
-install a fresh [QEMU] on your host. On most Linux distributions, the package
-manager, e.g. apt or rpm, is a good friend to install necessary software.
-However, some cutting edge versions or a custom version of software must be
-installed via manually compiling from source.
+Install [QEMU] is simple. Its official website details all the procedures to
+install a fresh [QEMU] on your host from scratch. On most Linux distributions,
+the package manager, e.g., apt for Ubuntu or dnf for Fedora, is a good friend
+for installing necessary software. However, installing a cutting-edge or custom
+version must be done manually by compiling from the source.
 
-For the examples presented in this repo, some special virtual hardware is
-prerequisite. In the chapter of I/O operations and the chapter on interrupts,
-virtual hardware are essential to respond to the requests from the driver and receive
-feedback. For the purpose of using all pieces of code in this repo,
-compiling [QEMU] from source is necessary.
+Some special virtual hardware is a prerequisite for the samples presented in
+this repo. For example, in the chapter on I/O operations and the chapter on
+interrupts, virtual hardware is essential to respond to the driver's requests
+and give feedback. Thus, building [QEMU] from the source with our patches
+patched is crucial to function all pieces of samples in this repo.
 
 ## Download and patch QEMU
 
@@ -49,7 +50,7 @@ sudo dnf -y install libcap-ng-devel libattr-devel
 
 Download QEMU source from official git:
 
-Note: For new, QEMU 5.2.0 is used through this repo
+Note: For now, QEMU 5.2.0 is used through out this repo.
 
 ```
 git clone https://git.qemu.org/git/qemu.git
@@ -70,7 +71,7 @@ git am QEMU_LDD.patch
 
 ## Build QEMU
 
-Install necessary packages which are essential to buding QEMU:
+Install necessary packages which are essential to building QEMU:
 
 ```
 # For ubuntu 18.04
@@ -111,7 +112,7 @@ Add `$INSTALL_DIR` in your `$PATH` environment variable.
 export PATH="$PATH:$INSTALL_DIR"
 ```
 
-Installation is unnecessary, users can directly use the binary from the build
+Installation is unnecessary; users can directly use the binary from the build
 directory:
 
 ```
@@ -121,8 +122,7 @@ ln -s ../qemu/build/qemu-system-x86_64 qemu
 
 ## Test
 
-
-When the building process is finished, run the command below to test if it works
+When the building process finishes, run the command below to test if it works
 properly.
 
 ```

@@ -1,33 +1,34 @@
 # nfs support
 
-As a developer, move files between the target machine and local host is a common
-operation. For QEMU, there is no ssh server running inside (of course, you may
-install one and configure it properly); Moving files both side is an urgent
-requirement for development process.
+As a developer, moving files between the target machine and the local host is a
+common operation, especially during the process of development and debugging.
+However, for QEMU guests, there is no such ssh server running inside that is
+used for syncing files to and from guests.
 
-To solve this problem, using NFS is a simple and grace solution. Running the
-NFS server on your development host, and mount it in QEMU virtual machine is
-fairly simple. That no any tool need to be installed in QEMU, makes life
+To this problem, NFS is a simple and grace solution. Running an NFS server on
+your development host and mounting the NFS filesystem in QEMU virtual machine
+is fairly simple. That no tool needs to be installed in QEMU guests makes life
 fast and easy.
 
 # Setup NFS server on host
 
-Install NFS server on Ubuntu/Debian host by running apt command:
+Install NFS server on an Ubuntu/Debian host by running the `apt-get` command:
+
+For Ubuntu:
 
 ```bash
 sudo apt-get install nfs-kernel-server
 ```
 
-For other Linux distributions, consult the manual for help.
-
-For Fedora: 
+For Fedora:
 
 ```bash
 sudo dnf -y install nfs-utils
 sudo systemctl enable --now rpcbind nfs-server
 ```
+For other Linux distributions, consult the manual for help.
 
-Setup NFS server to export working directory:
+Setup NFS server to export a working directory:
 
 ```bash
 sudo bash -c "echo \
@@ -35,38 +36,36 @@ sudo bash -c "echo \
     >> /etc/exports"
 ```
 
-The `insecure` option is compulsory, or an error of "refused mount request from
-127.0.0.1 for /xxxx (/xxx): illegal port xxxx" will report.
+The `insecure` option is compulsory, without it an error of "refused mount
+request from 127.0.0.1 for /xxxx (/xxx): illegal port xxxx" will report.
 
 # Test NFS mounting in QEMU guest
 
-Mount host's NFS filesystem in qemu:
+Mount host's NFS filesystem in QEMU guest:
 
 ```bash
 mount -t nfs -o nolock host_machine:/path/to/working/directory /mnt
 ```
 
-The actual value of `/path/to/working/directory` is the result of evaluation of
-`$LDD_ROOT`. Due to the fact that executing the mount command in QEMU
-guest, reference to this environment variable is not working. Type it manually
-in QEMU's terminal is needed.
+The actual value of `/path/to/working/directory` is the result of evaluating
+the `$LDD_ROOT` variable. Due to the fact that the final `mount` command is
+executed in QEMU guest in which the `$LDD_ROOT` variable is not accessible, you
+have to expand this variable manually to its real absolute path.
 
 # Auto mount NFS in guest
 
-For a fast development, manually mounting this NFS at each time the QEMU guest
-booting is time consuming. Setup an automatically mounting is good for speeding
-up development circle.
-
-
-Adding mounting command in **init** script, which we mentioned in previous
-chapter, right after the `sleep 0.5` command to enable auto mounting ability.
+For agile development, manually mounting this NFS filesystem each time the QEMU
+guest booting is time-consuming. It is extremely unfriendly for the development
+circle of sync-build-test. To ease this redundant work, set up automatic
+mounting in the `init` script by appending the command below right after the
+`sleep 0.5` command.
 
 ```bash
 # Add this line in init script. Put it just after the line of sleep 0.5.
 mount -t nfs -o nolock host_machine:/path/to/working/directory /mnt
 ```
 
-Rebuild the initramfs.
+Then, rebuild the initramfs.
 
 ```bash
 cd $LDD_ROOT/initramfs

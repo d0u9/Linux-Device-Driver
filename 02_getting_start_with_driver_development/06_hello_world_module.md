@@ -2,12 +2,12 @@
 
 ## Source code
 
-Finially, we reach the point that some programming will be made. The first
-program, like in any other programming books, is a simple "Hello World" program.
-However, the difference is that our hello world code is running insdie
-kernelspace rather than userspace.
+Finally, we reached the point of doing some programming. The first program is 
+a simple "Hello World" like any other programming book. However, the difference
+is that our "hello world" program will run inside kernelspace rather than in
+userspace.
 
-The code is fairly simple
+The code is pretty simple:
 
 ```C
 #include <linux/module.h>
@@ -33,148 +33,153 @@ MODULE_DESCRIPTION("Hello World program");
 
 Put this source file in an empty directory, and name it `hello_world.c`.
 
-It is a quite simple example with just a few lines of code there. This code is
-self-explained for that only two functions are defined with meaningful name that
-points out what the function does. A few of special macros are used to tell the
-kernel how to run this module and what extra information this module contains.
+This sample code is quite simple, with just a few lines of code there, and it
+is self-explained in that only two functions are defined with a meaningful name
+that points out the functions they do. A few special macros are used to tell
+the kernel how to load and link this module and what the extra information this
+module contains.
 
-Briefly, this module starts its journal in the function of `m_init()`, and ends
-in the function of `m_exit()`. Two macros, `module_init()` and `module_exit()`,
-bridge our module's function to the kernel.
+The module starts its journey in the function of `m_init()` and ends in
+`m_exit()`. Two macros, `module_init()` and `module_exit()`, bridge the module's
+function to the the kernel.
 
-Like in userspace we have a `printf()` function for dumping messages to a
-terminal, the kernel has its own print function named `printk()`. Yes, the
-suffix 'k' stands for kernel. Knowing the difference of `printf()` in userspace
-and `printk()` in kernelspace has no contribution to our understanding of how 
-to load and unload a kernel. So, we skip talking about it here, and give more
-details later.
+Like in userspace, where we have the `printf()` function for dumping messages
+to the terminal, the kernel also has its print function named `printk()`. Yes,
+the suffix 'k' stands for the kernel. Knowing the difference between `printf()`
+in userspace and `printk()` in kernelspace has no contribution to our
+understanding of how to load and unload a module. So, we skip the details here
+and give more dives later.
 
-Any programming interface exported by kernel are attributed to a set or
-a single header file. For different device driver, it will request different
-resource from kernel, and different header files are included in source code.
-Header file `linux/module.h` contains functions and macros that are very basic
-for almost every kernel module.
+Programming interfaces exported by the kernel are scattered in a set or a
+single header file. According to the resources the device driver requests, the
+sources code contains different header files, which provide the interface to
+that resource.
+
+The header file `linux/module.h` contains functions and macros that are very
+basic for almost every kernel module.
 
 ## Build
 
-Like any C projects, include the Linux kernel itself, there is one or more
-Makefiles exist, which tell the fact that how to piece each source file
-together. For a technically speaking, the compiling and linking process.
+Like any C project, including the Linux kernel itself, one or more Makefiles
+exist, which tell how to piece each source file together, technically speaking,
+the compiling and linking process.
 
 ```
 obj-m := hello_world.o
 ```
 
-Pretty simple, alright? For simple projects with one source file like our
-"hello world" example, it is sufficient. Copy and paste it in the same directory
-where the C file locates.
+Pretty simple, all right? It is sufficient for simple projects with one source
+file like our "hello world" example. Copy and paste it to a text file named
+`Makefile` in the same directory where the C file locates.
 
-
-Then, build the first kernel module by running command below in your shell. Be
-cautious, the working directory in the moment of running `make` command must be
-the folder that contains the Makefile and source file. 
+Then, build the first kernel module by running the command below in your
+terminal. Run the `make` command in the same directory that contains the
+Makefile and the C source file. 
 
 ```
 make -C /lib/modules/$(uname -r)/build M=$(pwd) modules
 ```
 
-In the command above, a special make variable `M` is passed, which points to
+A particular make variable `M` is passed in the command above, which points to
 the directory that Makefile itself residents by assigning via `$(pwd)`. Besides,
-`-C` option instructs make to read Makefiles in `/lib/modules/$(uname -r)/build`
-instead of own Makefile. Finally, `modules` is our build target here. Feel
-strange alright? The Makefile we created before seems not be used at all. This
-is due to difference of compiling kernel module. We will talk this in later
-chapters.
+the `-C` option, which stands for "change to directory", tells the make command
+to read Makefiles in `/lib/modules/$(uname -r)/build` instead of the current
+work directory. Finally, `modules` is the build target. Feel strange, all
+right? The Makefile created before seems not to be used at all. That is due to
+the peculiarity of how the kernel's build system works. We will talk about this
+in detail later.
 
-Loadable module file, suffixed with '.ko', will be created if no error was
-reported by `make` command. For curious readers who wondering the format of
-module file, the result returned by using `file` command to inspect our `.ko`
-file shows that module file is an ELF relocatable file indeed.
+The loadable module file, suffixed with '.ko', is created if the `make` command
+issues no error. Curious readers who wonder about the kernel module file's file
+format can use the `file` command to inspect the detailed information of the
+`.ko` file. The `.ko` file is indeed an `ELF` relocatable file that is widely
+used in Linux.
 
 ## Load and Test
 
-There are two common commands used for loading a module file into kernel. One
-is `modprobe` which is used mostly. Another is `insmod` which is trivial and
-simple. For most scenarios, `modprobe` is the best choice for that it is more
-clever and can handle module dependencies. `modprobe` looks in the module
-directory `/lib/modules/$(uname -r)` for all the modules and other files, except
-for the optional configuration files in the `/etc/modprobe.d` directory. In our
-"hello world" module, however, `insmod` is a good choice, since it is simple and
-straightforward as its name implies: insert a module file into kernel.
+There are two common commands used for loading a module file into the kernel.
+One is `modprobe`, which is mainly used, and another is `insmod`, which is
+trivial and straightforward. For most scenarios, `modprobe` is the best choice
+for it is more clever and can handle module dependencies. The `modprobe` tool
+finds modules and relative files by looking up in the module directory,
+`/lib/modules/$(uname -r)`. Add configurations in `/etc/modprobe.d` directory
+to set additional search locations. However, in the "hello world" module,
+`insmod` command is a better choice since it is simple enough that no extra
+knowledge is needed. As its name implies: insert a module file into the kernel.
 
 ```bash
-# Use insmod to insert hello-world module into kernel.
+# Use insmod to insert hello-world module into the kernel.
 insmod hello_world.ko
 ```
 
-The `m_init()` function in our sample code will be immediately invoked and
-executed as along as module file is loaded successfully. In that function,
-a string message is printed via `printk()` function. Messages dumped via
-`printk()` function are written to a internal circular buffer in the kernel.
-Usespace tools, such as `dmesg`, can fetch there kernel messages and print
+The sample code's `m_init()` function is instantly invoked and executed as long
+as the module file is loaded successfully. This function is simple in that only
+a string is dumped by the `printk()` function. Messages printed via `printk()`
+function are written to an internal circular buffer maintained by the kernel.
+Userspace tools, such as `dmesg`, can fetch the kernel's log messages and print
 them in the control terminal.
 
 ```bash
 dmesg
 ```
 
-Maybe, in this time after execution of `dmesg` command, your screen are flooded
-by various messages, and our "Hello, world!" string is displayed in the end.
-Messages other than "Hello, world!" string are that which are printed by various
-part of kernel and modules since boot up. If your message buffer is not overrun,
-initialization information during the very begin time of booting kernel may be
-found at the beginning of dumped message.
+Your terminal screen maybe is flooded with various messages after executing the
+`dmesg` command. But don't worry, the "Hello, world!" message printed by example
+will finally appear at the end of the dump. The `demsg` tool prints or controls
+the ring buffer of the kernel. By default, without any command options
+specified, `demsg` displays all kernel messages. If the kernel's ring buffer
+does not overrun, the log printed by the kernel and various kernel modules after
+the system's boot is dumped.
+
+Use 'dmesg -C` to clear the ring buffer.
 
 ## Unload module
 
-`modprobe` command can also be used in unloading a kernel module. But, for
-simplicity, `rmmod` is used here. `rmmod` is the twin of `insmod` which do a
-task of removing kernel module from kernel, opposite to its counterpart `insmod`
-command.
+The `rmmod` command accepts a parameter that is not the file name of the module
+but the module name registered in the kernel. In the "hello world" example,
+both file name and module name are identical, except that the file name is
+suffixed with ".ko". 
 
-```
-rmmod hello_world
-```
+Execution of `rmmod` command sometimes may fail due to the resource monopolized
+by this module being still busy.
 
-`rmmod` accepts an parameter that is not the file name of module, but the module
-name registered in kernel. For our sample, the module name is same as the file
-name of module except the `.ko` suffix.
-
-Execution of `rmmod` command sometimes may failed. It is often due to that
-resource monopolized by this module is still in busy.
-
-Removal of kernel module includes invoking `m_exit()` function defined by
-kernel writer. In this function, reousrces hold by kernel module must be freed
-properly, such as memory allocated during the running time, or it will lost
-the only chance to give it back and cause memory leakage.
-
+The module unloader of Linux invokes the `m_exit()` function during the module's
+removal phase. The memory and resources allocated and requested during the
+module's runtime must be freed and unregistered finally in the `m_exit()`
+function. If not, such memory or resources will be leaked forever until the
+system's next reboot. Memory leakage is a very severe problem that affects the
+stability and durability of the whole system and may cause innocent processes to
+be killed when OOM happens.
 
 ## Test in QEMU guest
 
 As mentioned in previous sections, samples in this book can be played and tuned
-in a QEMU virtual machine, in which we set up a simple system based on busybox
-and initramfs. For some Linux users, it seems very redundant of developing
-modules in a guest machine, because all tests can be run and tested directly on
-the host. But, due to the distinct difference between the kernel module and the
-userspace program, developers can gain a lot from using virtual machine. The
-first bonus of developing in a virtual guest is that system crash caused by
-module flaws won't affect the state of host machine. Kernel panic is horrible.
-It may cause deadly result to a system, such as file lost or system broken down.
-Second, using virtual machine makes it very convenient to test a kernel module
-in multiple kernels with different version. Third, for device driver developer,
-sometime, there is a ready hardware on which a driver will be developed. For
-this situation, write a simple virtual hardware for driver test is fairly
-convenient.
+in a QEMU virtual machine, in which we have set up a simple system based on the
+`busybox` and `initramfs` filesystem. For some Linux users, it looks pretty
+redundant to develop modules in a guest machine because all tests can be run and
+tested directly on the host. However, developers can benefit much from using
+virtual machines due to the distinct differences between the kernel module and
+the userspace program.
 
-In previous, we have set up a QEMU virtual machine, and mounted nfs in it for
-file sharing between the host and guest. To test "hello world" module, follow
-steps below:
+The first bonus of developing modules in a virtual guest is that system crash
+caused by module flaws won't affect the host machine. The kernel panic is
+horrible. It may cause a deadly result to a system, such as file lost or system
+broken, and further make the host system unusable. Second, using a virtual
+machine makes it very convenient to test a kernel module against multiple kernel
+versions. Third, for device driver developers, sometimes underlying hardware that
+the module drives is not ready at the beginning of project initialization.
+However, driver developers have no time to wait for hardware's readiness for the
+sake of time. The virtual machine solves this problem by writing a simple
+virtual hardware that implements the basic circuit interfaces as design.
 
-1. On host machine, recompile module against kernel 5.10, which is the version
-used in guest.
+Now, back to the QEMU virtual machine we have set up before, login into the
+guest's terminal, and change the working directory to the `nfs` filesystem
+mounted for sharing files between host and guest. Execute the commands below:
+
+1. On the host, recompile the module against the stable kernel:
 
 ```
-make -C ~/LDD_ROOT/kernels/linux-5.10.4 M=$(pwd) modules
+make -C ~/LDD_ROOT/kernels/linux-stable M=$(pwd) modules
 ```
 
 2. load and test in guest:
@@ -198,7 +203,7 @@ dmesg
 
 // TODO: explain why message is printed instantly.
 
-To unload module, use `rmmod` command
+To unload the module, use `rmmod` command:
 
 ```
 rmmod hello_world

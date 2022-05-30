@@ -6,24 +6,23 @@
 > control information in an 8-bit byte oriented data connection over the
 > Transmission Control Protocol (TCP).
 
-Sometimes, the ability to login into guest system for debugging is essential.
-This ability helps to run multiple processes in different terminal. For
-example, when testing FIFO device driver, two or more terminals are needed
-in which processes fetching and feeding data to and from FIFO device 
-simultaneously.
+Sometimes, the ability to login into the guest system for debugging is
+essential. This ability helps run multiple processes in different terminals.
+For example, when testing the FIFO device driver, two or more terminals are
+needed to fetch and feed data from and to the FIFO device simultaneously.
 
-Using **Telenet** is a simple solution to this problem. Benefit from the
-integration of telnet server in BusyBox binary, setting up telnet for remote
-login is fairly easy.
+Using **Telnet**, which implements the DARPA protocol, is a simple solution to
+this problem. Benefiting from the integration of telnet server in BusyBox
+binary, setting up telnet for remote login is pretty easy.
 
-busybox contains a telnet server, i.e `telnetd`. We cannot directly use
-`telnetd` command to start telnet server if we have not set pty properly.
-
-The telnet server in Busybox is command `telnetd`; it is not a fully functional
-service of telnet, which only provides fundamental functionalities. To use
-Busybox's `telnetd` command, a **pts** device node must exist.
+The `telnet` server in the Busybox is named `telnetd`; it only provides
+fundamental functionalities compared to a complete version of the telnet server
+usually installed via the package manager on a regular Linux distribution.
 
 # Setup pts device node
+
+It must have a **pts** device node exist to make Busybox function correctly.
+Create the device node by invoking:
 
 ```bash
 cd $LDD_ROOT/initramfs
@@ -32,15 +31,15 @@ mkdir dev/pts
 mknod -m 666 dev/ptmx c 5 2
 ```
 
-Automatically mount devpts device during boot time. Append the line below to
-`init` script after the nfs mount line.
+Automatically mount the `devpts` device during the boot time by appending the
+line below to the `init` script after the nfs mount line.
 
 
 ```bash
 mount -t devpts devpts  /dev/pts
 ```
 
-Rebuild the initramfs.
+Then, rebuild the initramfs.
 
 ```bash
 cd $LDD_ROOT/initramfs
@@ -50,53 +49,51 @@ find . -print0 | cpio --null -ov --format=newc | gzip -9 > ../initramfs.cpio.gz
 
 # Before initiating telnet server
 
-Don't , netw
-Normally, telnet uses port 23 as its default port. However, QEMU uses User 
-Networking as its default networking backend. This type of networking backend
-is simple and easy to use, no root privilege is required. But, the drawback is
-obvious:
+Typically, `telnet` uses port 23 as its default port. However, due to the
+default networking backend opted by QEMU, the "User Networking",  accessing
+port 23 of a guest machine is not straightforward. In contrast to the simple
+and easy using and no privilege is required of this backend, its drawback is
+evident as well:
 
-- Performance punishment.
-- The guest is not directly accessible from the host.
+    - Performance punishment.
+    - The guest is not directly accessible from the host.
 
-The inability of accessing guest from host is crucial to the problem of how to
-connect the telnet server from host.
-
-To overcome this restriction, users may use other networking backend or the
-handy option `hostfwd` which is specific of solving this problem.
-
-To map port 23 of telnet to 7023 on the host, append the option below to your
-QEMU command:
+The inability to access the guest imposed by QEMU's networking backend is
+crucial to the problem of connecting the telnet server from the host. To
+overcome this restriction, users may use other networking backend or append the
+handy option `-hostfwd`. The `-hostfwd` option tells QEMU the rule that forwards
+a port from the guest to the host. In this telnet scenario, to map port 23 in
+the guest to port 7023 on the host, append the option below to your QEMU
+command:
 
 ```bash
 -netdev user,id=host_net,hostfwd=tcp::7023-:23 \
 -device e1000,mac=52:54:00:12:34:50,netdev=host_net \
 ```
 
-These options instruct QEMU to use e1000 NIC, and map tcp port 7023 on host to
-port 23 of guest.
-
+The options instruct QEMU to use an e1000 NIC and forward the TCP port 23 from
+the guest to 7023 on the host.
 
 # Test telnetd in QEMU guest
 
-Boot your QEMU guest, and run the command in it to start telnet server:
+Boot your QEMU guest, and run the command in it to start the telnet server:
 
 ```bash
 telnetd -F -l /bin/sh
 ```
 
-The option `-F` makes `telnetd` run in foreground. Just for testing the network
-connection.
+The option `-F` makes `telnetd` run in the foreground, suitable for
+testing the network connection.
 
-
-On host side, connect to QEMU guest by running:
+On the host side, connect to the telnet server in the QEMU guest by running:
 
 ```
 telnet localhost 7023
 ```
 
-Successfully, the guest's shell promotion will be seen in your terminal. If
-everything goes correctly, it is time to make it auto start.
+On successful, you will get the shell promoter in the terminal. Next, make this
+telnetd server start automatically again by writing the line in the `init`
+script.
 
 # Automatic start for telnetd service.
 
@@ -105,7 +102,6 @@ Add the line below in your init script:
 ```bash
 telnetd -l /bin/sh
 ```
-
 ---
 
 # ¶ The end

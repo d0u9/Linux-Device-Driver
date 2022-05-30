@@ -42,7 +42,7 @@ cp -a /dev/{null,console,tty,ttyS0} dev/
 > environment for any small or embedded system.
 
 **busybox** is distributed as a static linked binary. User can find all history
-and latest versions on [busybox official web page].
+and latest versions on [busybox's official web page].
 
 ```bash
 cd $LDD_ROOT/initramfs
@@ -55,15 +55,15 @@ bin/busybox --install bin
 bin/busybox --install sbin
 ```
 
-`--install` options instructs **busybox** to create utilities in `bin` and
+The `--install` option instructs **busybox** to create utilities in `bin` and
 `sbin` directories.
 
 # Compose init script
 
-Kernel executes init script as PID 1. This init process is responsible for
-for bringing the rest of system up properly, and setting up necessary
-configurations. These setups include mounting filesystems, assign IP address
-for Ethernet devices, etc.
+Kernel executes init script as PID 1 process. This init process is responsible
+for bringing the rest of the system up properly and setting up necessary
+configurations. These setups include mounting filesystems, assigning IP
+addresses for Ethernet devices, etc.
 
 ```bash
 cd $LDD_ROOT/initramfs
@@ -94,9 +94,9 @@ EOF
 chmod +x init
 ```
 
-The `-l` option of the last command in **init** script is essential. Lack of
-this option will cause error of "sh: can't access tty; job control turned off"
-during system booting. It is detailed in [Busybox's FAQ].
+The `-l` option of `setsid` command in **init** script is compulsory. That lack
+of this option will cause an error of "sh: can't access tty; job control turned
+off" during system booting. It is detailed in [Busybox's FAQ].
 
 ## More setups
 
@@ -163,5 +163,5 @@ Press `<C-A> x` to terminate QEMU.
 # ¶ The end
 
 [Linux kernel documentation]: https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux-stable.git/tree/Documentation/filesystems/ramfs-rootfs-initramfs.txt?h=v4.9.30
-[busybox official web page]: https://www.busybox.net/downloads/binaries
+[busybox's official web page]: https://www.busybox.net/downloads/binaries
 [Busybox's FAQ]: (https://www.busybox.net/FAQ.html#job_control)

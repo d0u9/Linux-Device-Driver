@@ -1,17 +1,18 @@
 # Opening
 
 Almost every programming book starts with a simple hello world example, and we
-follow this convention. Through this chapter, we firstly setup our QEMU based
-development environment. Then download and compile Linux kernel from source,
-build a simple `initramfs` for initiating a shell in our tiny system. After
-that, some configurations will be made which are essential to a better usage
-experience, such as mount host volumes into guest for fast file sharing. And
-finally, a simple kernel module will be implemented which will print a string
-of "Hello World" in Kernel's log system.
+follow this convention. Through this chapter, we first set up our QEMU based
+development environment. Then download and compile the Linux kernel from the
+source and build a simple `initramfs` filesystem for initiating a shell in our
+toy system. After that, some configuration setups are essential for a better
+user experience, such as mounting host volumes into the guest VM for fast file
+sharing. And finally, a simple kernel module will be implemented, which prints
+a "Hello World" string in the Kernel's log system.
 
-This chapter has no relevant to any hardware devices. The purpose is simple:
-initiation. Throw too much concepts once is not wise for introduction, we hope
-readers can involve into the process of driver development gradually.
+
+This chapter has not relevant to any hardware devices. The purpose is simple:
+initiation. Throwing too many concepts once is not wise for an introduction; we
+hope the readers can gradually become involved in driver development.
 
 # ¶ The end
 
