@@ -2,19 +2,17 @@
 
 # Download Source
 
-Linux kernel source are listed in its official web, [The Linux Kernel Archives].
+Linux kernel sources of different versions are listed on its official web, [The Linux Kernel Archives].
 
-For the time I write this documentation, the latest stable kernel version is
-**5.10.4**. Our examples are implemented on this version of kernel, and maybe
-follow the updates of kernel a few versions.
+At the time I write this documentation, the latest stable kernel version is
+**5.10.4**, and the examples in this book are implemented against this version.
 
-There are many ways to obtain kernel source. Download a tarball directly, make
-a git clone from official's git repo, or even patch an older version of kernel.
+There are many ways to obtain the kernel source. For example, download a tarball directly, make a git clone from the official's git repo, or even get a new version by patching an old one.
 
-In our example, we directly download the kernel source tarball from the offical
-website, and extract it locally in `$LDD_ROOT/kernel/` directory.
+Here, we directly download the kernel source tarball from the official website and extract it locally in `$LDD_ROOT/kernel/` directory.
 
 To download and extract the source ball:
+
 
 ```
 mkdir $LDD_ROOT/kernel && cd $LDD_ROOT/kernel
@@ -30,8 +28,9 @@ As [LFS] says:
 > defconfig, This will set the base configuration to a good state that takes
 > your current system architecture into account.
 
-Firstly, the kernel is set to the default configuration. Then, we tailor this
-configuration to fit our need by disable some unnecessary drivers.
+Firstly, set the kernel to the default configuration. Then, tailor it based on
+the default configuration to fit our needs by disabling some unnecessary
+drivers.
 
 ```
 make defconfig
@@ -47,7 +46,7 @@ Disable unnecessary components:
       < >Sound card support  ----
     ```
 
-2. Disable all wireless lan device support and USB network adapters:
+2. Disable all wireless lan device supports and USB network adapters:
 
    ```
    Device Drivers  --->
@@ -56,7 +55,7 @@ Disable unnecessary components:
        < >   USB Network Adapters  ----
    ```
 
-3. Disable all ethernet device support except intel e1000 device:
+3. Disable all ethernet device supports except the intel e1000 device:
 
    ```
    Device Drivers  --->
@@ -68,8 +67,7 @@ Disable unnecessary components:
            <*>     Intel(R) PRO/1000 PCI-Express Gigabit Ethernet support 
    ```
 
-4. Disable IPv6 support. Temporarily has no intersection with IPv6 protocol in
-out examples.
+4. Disable IPv6 support. Currently, no content about IPv6 in our examples.
 
    ```
     [*] Networking support  --->
