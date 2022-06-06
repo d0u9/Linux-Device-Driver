@@ -31,10 +31,10 @@ and Greg Kroah-Hartman, I give my sincere appreciation to all these authors
 for their great work.
 
 LDD3 is available online, and you may request a copy of the PDF from
-[https://lwn.net/Kernel/LDD3/]. It is still an excellent book for reference for
-the development of Linux Driver. However, due to its old age, first published
-in 2005, some of the APIs and data structures have dramatically changed after
-it was first composed.
+[https://lwn.net/Kernel/LDD3/]. It is still an excellent book to reference for
+the development of Linux device module. However, due to its old age, first
+published in 2005, some of the APIs and data structures have dramastically
+changed after its first publication.
 
 Compare to the Kernel 2.6.10, which is the base of the LDD3 book, I rewrite all 
 the examples for a brand new Kernel version 5.10, released in December 2020.
@@ -45,7 +45,7 @@ and open source machine emulator and virtualizer) virtual machine, in which
 a virtual parallel port device is implemented for convenient debugging.
 
 This is the opening of my whole project, I hope you will enjoy in the tour
-of reading my documents.
+of reading my book.
 
 Thanks a lot.
 
