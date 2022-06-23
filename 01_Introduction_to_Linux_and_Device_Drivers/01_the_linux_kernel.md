@@ -194,7 +194,7 @@ memory layout in kernel is out of the scope of this book. The only thing the
 developer has to keep in mind is that the code written for kernel modules is
 finally loaded and run in kernel space. It means (1) the flaws in module can 
 crash the whole system; (2) Have high permission to access almost any resource
-in kernel, which maybe cause severe security issues; (3) No any usersapce
+in kernel, which maybe cause severe security issues; (3) No any userspace
 standard libraries can be referenced in module, e.g. glibc.
 
 It is developer's duty to keep module consistent and insistent for that upgrade
