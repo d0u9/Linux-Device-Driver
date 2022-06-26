@@ -125,9 +125,9 @@ dmesg
 
 Your terminal screen maybe is flooded with various messages after executing the
 `dmesg` command. But don't worry, the "Hello, world!" message printed by example
-will finally appear at the end of the dump. The `demsg` tool prints or controls
+will finally appear at the end of the dump. The `dmesg` tool prints or controls
 the ring buffer of the kernel. By default, without any command options
-specified, `demsg` displays all kernel messages. If the kernel's ring buffer
+specified, `dmesg` displays all kernel messages. If the kernel's ring buffer
 does not overrun, the log printed by the kernel and various kernel modules after
 the system's boot is dumped.
 
