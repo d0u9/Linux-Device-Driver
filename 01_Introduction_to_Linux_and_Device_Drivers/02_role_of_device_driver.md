@@ -56,7 +56,7 @@ infant and is not accepted by upstream. However, some prestigious maintainers
 perform an optimistic attitude toward Rust that Linus Torvalds said "I don't
 hate it" in the LKML.
 
-Until now, Jun 25, 2021, there is still much work have to do in integrating Rust
+Until now, Jun 25, 2021, there is still much work to be done in integrating Rust
 in the Kernel. Currently, the most challenging job is refactoring the memory
 allocator.
 

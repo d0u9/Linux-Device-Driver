@@ -6,7 +6,7 @@ According to the official page of the Linux kernel:
 > Linus Torvalds with assistance from a loosely-knit team of hackers across
 > the Net. It aims towards POSIX and Single UNIX Specification compliance.
 
-Linux is great. It was created by Linus Torvalds in 1991 and then was richen by
+Linux is great. It was created by Linus Torvalds in 1991 and then was then enriched by
 people from all around the world. It is free (free speech, not free beer) and
 open source, which means anyone can download and play it under the GPL V2
 license. Linux is a UNIX-like operating system; it provides a standard 
@@ -15,7 +15,7 @@ programming interface to its users.
 Linux is fast and lightweight. Due to its sophisticated design and the 
 monolithic kernel, Linux is super fast and small, making it the first 
 candidate for platforms with poor hardware resources. It can be tailored for
-tasks' essential needs and still keep slim in size. Benefiting from these,
+tasks' essential needs and still remain slim in size. Benefiting from these,
 Linux nowadays is running on various devices; it spans from mobile phones to
 supercomputers.
 
@@ -82,7 +82,7 @@ the outer-most layer of the whole operating system; any communication to the
 outside world or other processes, i.e., IPC, the inter-process communication,
 is handled by the kernel. Most important the role the process management unit
 take is scheduling. Scheduling is a combination of policy and mechanism to
-decide the next process utilize the CPU, and run it on the CPU. Different
+decide the next process to utilize the CPU, and run it on the CPU. Different
 schedulers have different strategies to determine how processes run after each
 other.
 
@@ -121,10 +121,10 @@ a process has taken almost all eventually terminate with physical operations,
 e.g., writing results to a hard disk, sending data via a network, fetching the
 coordinates to which the mouse is currently pointing. Hardware devices are
 designed and manufactured by hardware companies; the operations hardware can
-act are specific to that device. Even though a lot of hardware standards exist,
+perform are specific to that device. Even though a lot of hardware standards exist,
 such as the PCIe, the low-level hardware interfaces vary a lot from device to
 device. It is the driver's role to map these device differences to a set of
-pre-defined interfaces the kernel wants, which is what this book aims to.
+pre-defined interfaces the kernel wants, which is what this book aims to teach.
 
 **Networking**
 
@@ -173,9 +173,9 @@ drivers are not welcome at this time. Linus is responsible for rolling these
 "rc" versions until the point that the code is believed to be stable enough.
 Then, a new stable kernel is spawned, and a new circle is started.
 
-If the contributor luckily misses the merge window, the best thing he may do is
-wait for the next circle. However, this rule is not unbreakable; emergency
-fixes or patches to fatal security problems are permitted to merge into even
+If the contributor unluckily misses the merge window, the best thing he may do is
+wait for the next circle. However, this rule has exceptions; emergency
+fixes or patches to fatal security problems are permitted to merge even if
 the merge window is closed.
 
 ## Loadable Modules

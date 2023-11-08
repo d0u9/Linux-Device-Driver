@@ -45,7 +45,7 @@ like:
 ```
 
 Next, read the device file which you've writen to before, if success, contents
-previously wrote into are extacted. `dmesg | tail -10` will look like:
+previously wrote into are extracted. `dmesg | tail -10` will look like:
 
 ```
 [ 4000.317270] scull: scull_open() is invoked
