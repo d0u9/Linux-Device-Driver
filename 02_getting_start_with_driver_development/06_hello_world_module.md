@@ -41,7 +41,7 @@ module contains.
 
 The module starts its journey in the function of `m_init()` and ends in
 `m_exit()`. Two macros, `module_init()` and `module_exit()`, bridge the module's
-function to the the kernel.
+function to the kernel.
 
 Like in userspace, where we have the `printf()` function for dumping messages
 to the terminal, the kernel also has its print function named `printk()`. Yes,
