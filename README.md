@@ -2,6 +2,8 @@
 
 Examples of Linux Device Drivers, currently for kernel 5.10.
 
+# NOTE: Apologies for the delay in maintaining this project, sincerely.
+
 # Before start
 
 The examples in this repo are compiled against Linux Kernel 5.10. Other versions
