@@ -9,10 +9,8 @@ user experience, such as mounting host volumes into the guest VM for fast file
 sharing. And finally, a simple kernel module will be implemented, which prints
 a "Hello World" string in the Kernel's log system.
 
-
 This chapter has not specific to any hardware devices. The purpose is simple:
 initiation. Throwing too many concepts at once is not wise for an introduction; we
 hope the readers can gradually become involved in driver development.
 
-# ¶ The end
-
+## ¶ The end

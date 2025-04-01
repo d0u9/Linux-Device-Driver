@@ -33,13 +33,6 @@ flavors of Linux. But the cores of these distributions are all the same. In
 this book, we don't use any specific Linux distribution. Instead, an initramfs
 is built and is run directly in QEMU as a guest.
 
-
-
-
-
-
-
-
 ## Architecture
 
 Linux is a monolithic kernel which means the entire kernel is working in the
@@ -212,7 +205,7 @@ However, aside from driving devices, the loadable modules' ability is far
 beyond. For example, filesystem support and network traffic control policy can
 be implemented as a loadable module.
 
-# ¶ The end
+## ¶ The end
 
 ---
 
@@ -220,4 +213,3 @@ TODO:
 
 1. monolithic kernel, directly function call instead of IPC. IPC is expensive
 both in reousrce and time.
-

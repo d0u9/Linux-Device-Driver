@@ -1,6 +1,6 @@
 # Compile Linux Kernel
 
-# Download Source
+## Download Source
 
 Linux kernel sources of different versions are listed on its official web, [The Linux Kernel Archives].
 
@@ -13,14 +13,14 @@ Here, we directly download the kernel source tarball from the official website a
 
 To download and extract the source ball:
 
-
+```bash
+cd $LDD_ROOT/kernel
+wget https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-${KERNEL_VERSION}.tar.xz
+tar -xf linux-${KERNEL_VERSION}.tar.xz
+mv linux-${KERNEL_VERSION} linux-current
 ```
-mkdir $LDD_ROOT/kernel && cd $LDD_ROOT/kernel
-wget https://cdn.kernel.org/pub/linux/kernel/v5.x/linux-5.10.4.tar.xz
-tar -xf linux-5.10.4.tar.xz
-```
 
-# Configure Linux Kernel
+## Configure Linux Kernel
 
 As [LFS] says:
 
@@ -32,7 +32,7 @@ Firstly, set the kernel to the default configuration. Then, tailor it based on
 the default configuration to fit our needs by disabling some unnecessary
 drivers.
 
-```
+```bash
 make defconfig
 make menuconfig
 ```
@@ -41,14 +41,14 @@ Disable unnecessary components:
 
 1. Disable all sound card supports:
 
-    ```
+    ```text
     Device Drivers --->
       < >Sound card support  ----
     ```
 
 2. Disable all wireless lan device supports and USB network adapters:
 
-   ```
+   ```text
    Device Drivers  --->
      [*] Network device support  --->
        [ ]   Wireless LAN  ----
@@ -57,7 +57,7 @@ Disable unnecessary components:
 
 3. Disable all ethernet device supports except the intel e1000 device:
 
-   ```
+   ```text
    Device Drivers  --->
      [*] Network device support  --->
        [*]   Ethernet driver support  --->
@@ -69,7 +69,7 @@ Disable unnecessary components:
 
 4. Disable IPv6 support. Currently, no content about IPv6 in our examples.
 
-   ```
+   ```text
     [*] Networking support  --->
       Networking options  --->
         < >   The IPv6 protocol  ----
@@ -77,22 +77,21 @@ Disable unnecessary components:
 
 5. Disable wireless network support:
 
-    ```
+    ```text
     [*] Networking support  --->
       [ ]   Wireless  ----
     ```
 
-# Compiling
+## Compiling
 
-```
+```bash
 make -j bzImage
 
 # Generate Module.symvers file
 make -j modules
 ```
 
-# ¶ The end
+## ¶ The end
 
 [The Linux Kernel Archives]: https://www.kernel.org/
 [LFS]: http://www.linuxfromscratch.org/lfs/view/stable/chapter08/kernel.html
-

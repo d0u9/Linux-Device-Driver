@@ -62,6 +62,6 @@ allocator.
 
 Another repo of mine, [Linux-Device-Driver-Rust], details how Rust is integrated into the Kernel.
 
-# ¶ The end
+## ¶ The end
 
 [Linux-Device-Driver-Rust]: https://github.com/d0u9/Linux-Device-Driver-Rust]

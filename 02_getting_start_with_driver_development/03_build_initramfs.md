@@ -1,6 +1,6 @@
 # Build initramfs
 
-# what is initramfs
+## what is initramfs
 
 Except from [Linux kernel documentation]:
 
@@ -14,7 +14,7 @@ Except from [Linux kernel documentation]:
 > the older code to locate and mount a root partition, then exec some variant
 > of /sbin/init out of that.
 
-# Create initramfs image
+## Create initramfs image
 
 ```bash
 # Create initramfs directory
@@ -31,7 +31,7 @@ chmod 1777 tmp
 cp -a /dev/{null,console,tty,ttyS0} dev/
 ```
 
-# Install busybox
+## Install busybox
 
 > BusyBox combines tiny versions of many common UNIX utilities into a single
 > small executable. It provides replacements for most of the utilities you
@@ -47,7 +47,7 @@ and latest versions on [busybox's official web page].
 ```bash
 cd $LDD_ROOT/initramfs
 
-wget https://www.busybox.net/downloads/binaries/1.30.0-i686/busybox -O bin/busybox
+wget https://www.busybox.net/downloads/binaries/1.35.0-x86_64-linux-musl/busybox -O bin/busybox
 chmod +x bin/busybox
 
 # Install busybox
@@ -58,7 +58,7 @@ bin/busybox --install sbin
 The `--install` option instructs **busybox** to create utilities in `bin` and
 `sbin` directories.
 
-# Compose init script
+## Compose init script
 
 Kernel executes init script as PID 1 process. This init process is responsible
 for bringing the rest of the system up properly and setting up necessary
@@ -125,19 +125,27 @@ root:x:0:
 EOF
 ```
 
-# Build initramfs image.
+## Build initramfs image.
 
 ```bash
-cd $LDD_ROOT/initramfs
+# Create a helper script
+
+cat << EOF > $LDD_ROOT/bin/ldd_ramfs.sh
+#!/bin/bash
+
+cd \$LDD_ROOT/initramfs
 
 find . -print0 | cpio --null -ov --format=newc | gzip -9 > ../initramfs.cpio.gz
+EOF
+
+chmod +x $LDD_ROOT/bin/ldd_ramfs.sh 
 ```
 
-# Run our kernel in QEMU
+## Run our kernel in QEMU
 
 ```bash
-qemu -enable-kvm \
-     -kernel $LDD_ROOT/kernels/linux-5.10.4/arch/x86_64/boot/bzImage \
+ldd-qemu -enable-kvm \
+     -kernel $LDD_ROOT/kernel/linux-current/arch/x86_64/boot/bzImage \
      -initrd $LDD_ROOT/initramfs.cpio.gz \
      -append 'console=ttyS0' \
      -nographic
@@ -145,13 +153,12 @@ qemu -enable-kvm \
 
 Press `<C-A> x` to terminate QEMU.
 
-# Reference
+## Reference
 
 1. [https://landley.net/writing/rootfs-howto.html][1]
 2. [http://jootamam.net/howto-initramfs-image.htm][2]
 3. [https://wiki.gentoo.org/wiki/Custom_Initramfs][3]
 4. [https://busybox.net/FAQ.html][4]
-
 
 [1]: https://landley.net/writing/rootfs-howto.html
 [2]: http://jootamam.net/howto-initramfs-image.htm
@@ -160,7 +167,7 @@ Press `<C-A> x` to terminate QEMU.
 
 ---
 
-# ¶ The end
+## ¶ The end
 
 [Linux kernel documentation]: https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux-stable.git/tree/Documentation/filesystems/ramfs-rootfs-initramfs.txt?h=v4.9.30
 [busybox's official web page]: https://www.busybox.net/downloads/binaries

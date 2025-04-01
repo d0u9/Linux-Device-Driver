@@ -20,7 +20,7 @@ developer doesn't need to install a complete Linux distribution; instead, only
 the Kernel image and an initial ramdisk are necessary to boot the whole system,
 fast and convenient.
 
-# Install QEMU
+## Install QEMU
 
 Install [QEMU] is simple. Its official website details all the procedures to
 install a fresh [QEMU] on your host from scratch. On most Linux distributions,
@@ -38,25 +38,28 @@ patched is crucial to function all pieces of samples in this repo.
 
 Install ninja-build with dnf or apt.
 
-```
+```bash
 sudo dnf -y install ninja-build
 ```
 
 Qemu will also require the following packages installed:
 
-```
+```bash
 sudo dnf -y install libcap-ng-devel libattr-devel
 ```
 
 Download QEMU source from official git:
 
-Note: For now, QEMU 5.2.0 is used through out this repo.
+Note: For now, QEMU `v9.2.3` is used through out this repo.
 
-```
+```bash
+cd "$LDD_ROOT/source"
+
 git clone https://git.qemu.org/git/qemu.git
 cd qemu
+
 # The following line is an older version of QEMU. QEMU_LDD.patch has been updated for 7.0.50.
-# git checkout v5.2.0
+# git checkout ${QEMU_VERSION}
 git submodule init
 git submodule update --recursive
 ```
@@ -64,7 +67,7 @@ git submodule update --recursive
 Apply QEMU patch for adding new hardwares:
 
 {TODO}: Correct this url.
-```
+```bash
 wget https://raw.githubusercontent.com/d0u9/Linux-Device-Driver/draft/02_getting_start_with_driver_development/QEMU_LDD.patch
 git am QEMU_LDD.patch
 ```
@@ -73,24 +76,26 @@ git am QEMU_LDD.patch
 
 Install necessary packages which are essential to building QEMU:
 
-```
-# For ubuntu 18.04
-sudo apt-get install ninja-build libglib2.0-dev libcap-ng-dev libcairo2-dev python3-sphinx
+```bash
+# For ubuntu 24.04
+sudo apt-get install ninja-build libglib2.0-dev libcap-ng-dev libcairo2-dev python3-sphinx python3-venv
 ```
 
 Setup necessary ENVs for building.
 
-```
-export INSTALL_DIR=/path/to/be/installed/to
-export CONFIG_DIR=$INSTALL_DIR/etc
-export TARGET_LIST="i386-softmmu,x86_64-softmmu"
+```bash
+INSTALL_DIR="$LDD_ROOT/tools/qemu"
+CONFIG_DIR=$INSTALL_DIR/etc
+TARGET_LIST="i386-softmmu,x86_64-softmmu"
 ```
 
 Then, configure and build
 
-```
+```bash
+cd "$LDD_ROOT/source/qemu"
 mkdir build
 cd build
+
 ../configure \
     --prefix=$INSTALL_DIR \
     --sysconfdir=$CONFIG_DIR \
@@ -102,22 +107,14 @@ cd build
     --disable-strip \
     ;
 make -j
-# only do this line if you actually want to install QEMU otherwise note the instructions about setting up in $LDD_ROOT/bin
 make install
 ```
 
-Add `$INSTALL_DIR` in your `$PATH` environment variable.
+> Installation is unnecessary; users can directly use the binary from the build
 
-```
-export PATH="$PATH:$INSTALL_DIR"
-```
-
-Installation is unnecessary; users can directly use the binary from the build
-directory:
-
-```
+```bash
 cd $LDD_ROOT/bin
-ln -s ../qemu/build/qemu-system-x86_64 qemu
+ln -s $INSTALL_DIR/bin/qemu-system-x86_64 ldd-qemu
 ```
 
 ## Test
@@ -125,11 +122,11 @@ ln -s ../qemu/build/qemu-system-x86_64 qemu
 When the building process finishes, run the command below to test if it works
 properly.
 
-```
-qemu --version
+```bash
+ldd-qemu --version
 ```
 
-# ¶ The end
+## ¶ The end
 
 [VirtualBox]: http://www.qemu.org/
 [QEMU]: http://www.qemu.org/

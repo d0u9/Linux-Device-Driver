@@ -10,18 +10,18 @@ During the following chapters later, the working directory including everything
 is referenced as the `ldd_root` directory. Relative paths encountered later are
 referenced against the `ldd_root` until an explicit note is made.
 
-# Export LDD_ROOT environment variable
+## Export LDD_ROOT environment variable
 
-```
+```bash
 export LDD_ROOT=/path/to/your/ldd_root/
 ```
 
 Add the line above in your `.bashrc` or `.zshrc` (if zsh is your working shell)
 for a quick reference.
 
-# List of directory
+## List of directory
 
-```
+```bash
 tree -L 1 -d $LDD_ROOT
 
 ../../
@@ -34,27 +34,27 @@ tree -L 1 -d $LDD_ROOT
 └── qemu                    # The QEMU source files, git cloned from official repo
 ```
 
-# Some setups
+## Some setups
 
 Add bin directory in `PATH` environment for executable binary searching.
 
-```
+```bash
 export PATH="$PATH:$LDD_ROOT/bin"
 ```
 
 Append the line above in your shell's `rc` file.
 
-# Make necessary directories
+## Make necessary directories
 
-```
-mkdir $LDD_ROOT/{bin,nfs_dir}
+```bash
+mkdir -p "$LDD_ROOT"/{bin,source,tools,kernel,nfs_host}
 ```
 
-# Clone this repo
+## Clone this repo
 
-```
-cd $LDD_ROOT/nfs_dir
+```bash
+cd $LDD_ROOT/nfs_host
 git clone https://github.com/d0u9/Linux-Device-Driver.git
 ```
 
-# ¶ The end
+## ¶ The end
