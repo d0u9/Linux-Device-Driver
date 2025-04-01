@@ -67,6 +67,7 @@ git submodule update --recursive
 Apply QEMU patch for adding new hardwares:
 
 {TODO}: Correct this url.
+
 ```bash
 wget https://raw.githubusercontent.com/d0u9/Linux-Device-Driver/draft/02_getting_start_with_driver_development/QEMU_LDD.patch
 git am QEMU_LDD.patch

@@ -3,7 +3,7 @@
 To fulfill the purpose of practicing Kernel Driver development, a lot of repos
 and tools are needed to cooperate together as a unity.
 
-In this chapter, a list of directories is presented here in which all the 
+In this chapter, a list of directories is presented here in which all the
 necessary software and tools are itemized.
 
 During the following chapters later, the working directory including everything
