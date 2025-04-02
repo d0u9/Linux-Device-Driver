@@ -2,7 +2,7 @@
 
 ## Source code
 
-Finally, we reached the point of doing some programming. The first program is 
+Finally, we reached the point of doing some programming. The first program is
 a simple "Hello World" like any other programming book. However, the difference
 is that our "hello world" program will run inside kernelspace rather than in
 userspace.
@@ -14,13 +14,13 @@ The code is pretty simple:
 
 static int __init m_init(void)
 {
-	printk(KERN_ALERT "Hello, world!\n");
-	return 0;
+    printk(KERN_ALERT "Hello, world!\n");
+    return 0;
 }
 
 static void __exit m_exit(void)
 {
-	printk(KERN_ALERT "Bye, world!\n");
+    printk(KERN_ALERT "Bye, world!\n");
 }
 
 module_init(m_init);
@@ -64,7 +64,7 @@ Like any C project, including the Linux kernel itself, one or more Makefiles
 exist, which tell how to piece each source file together, technically speaking,
 the compiling and linking process.
 
-```
+```makefile
 obj-m := hello_world.o
 ```
 
@@ -74,9 +74,9 @@ file like our "hello world" example. Copy and paste it to a text file named
 
 Then, build the first kernel module by running the command below in your
 terminal. Run the `make` command in the same directory that contains the
-Makefile and the C source file. 
+Makefile and the C source file.
 
-```
+```bash
 make -C /lib/modules/$(uname -r)/build M=$(pwd) modules
 ```
 
@@ -138,7 +138,7 @@ Use 'dmesg -C` to clear the ring buffer.
 The `rmmod` command accepts a parameter that is not the file name of the module
 but the module name registered in the kernel. In the "hello world" example,
 both file name and module name are identical, except that the file name is
-suffixed with ".ko". 
+suffixed with ".ko".
 
 Execution of `rmmod` command sometimes may fail due to the resource monopolized
 by this module being still busy.
@@ -178,37 +178,35 @@ mounted for sharing files between host and guest. Execute the commands below:
 
 1. On the host, recompile the module against the stable kernel:
 
-```
-make -C ~/LDD_ROOT/kernels/linux-stable M=$(pwd) modules
-```
+    ```bash
+    make -C ~/LDD_ROOT/kernels/linux-stable M=$(pwd) modules
+    ```
 
 2. load and test in guest:
 
-```bash
-# This is an auxiliary shell script created before.
-qemu_run.sh
-
-# Change to the NFS sharing direcotry. It is mounted at /mnt directory.
-cd /mnt
-
-# Change to our example directory
-cd /mnt/Linux-Device-Driver/eg_01_hello_world
-
-# Insert module
-insmod hello_world.ko
-
-# Verify via dmesg
-dmesg
-```
+    ```bash
+    # This is an auxiliary shell script created before.
+    qemu_run.sh
+    
+    # Change to the NFS sharing direcotry. It is mounted at /mnt directory.
+    cd /mnt
+    
+    # Change to our example directory
+    cd /mnt/Linux-Device-Driver/eg_01_hello_world
+    
+    # Insert module
+    insmod hello_world.ko
+    
+    # Verify via dmesg
+    dmesg
+    ```
 
 // TODO: explain why message is printed instantly.
 
 To unload the module, use `rmmod` command:
 
-```
+```bash
 rmmod hello_world
 ```
 
-# ¶ The end
-
-
+## ¶ The end

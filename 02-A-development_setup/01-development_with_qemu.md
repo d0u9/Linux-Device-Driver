@@ -79,7 +79,7 @@ Install necessary packages which are essential to building QEMU:
 
 ```bash
 # For ubuntu 24.04
-sudo apt-get install ninja-build libglib2.0-dev libcap-ng-dev libcairo2-dev python3-sphinx python3-venv
+sudo apt-get install ninja-build libglib2.0-dev libcap-ng-dev libcairo2-dev python3-sphinx python3-venv libslirp-dev
 ```
 
 Setup necessary ENVs for building.

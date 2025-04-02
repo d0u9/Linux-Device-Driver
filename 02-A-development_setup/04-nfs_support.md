@@ -10,7 +10,7 @@ your development host and mounting the NFS filesystem in QEMU virtual machine
 is fairly simple. That no tool needs to be installed in QEMU guests makes life
 fast and easy.
 
-# Setup NFS server on host
+## Setup NFS server on host
 
 Install NFS server on an Ubuntu/Debian host by running the `apt-get` command:
 
@@ -26,6 +26,7 @@ For Fedora:
 sudo dnf -y install nfs-utils
 sudo systemctl enable --now rpcbind nfs-server
 ```
+
 For other Linux distributions, consult the manual for help.
 
 Setup NFS server to export a working directory:
@@ -39,12 +40,12 @@ sudo bash -c "echo \
 The `insecure` option is compulsory, without it an error of "refused mount
 request from 127.0.0.1 for /xxxx (/xxx): illegal port xxxx" will report.
 
-# Test NFS mounting in QEMU guest
+## Test NFS mounting in QEMU guest
 
 Mount host's NFS filesystem in QEMU guest:
 
 ```bash
-mount -t nfs -o nolock host_machine:/path/to/working/directory /mnt
+mount -t nfs -o nolock host_machine:$LDD_ROOT /mnt
 ```
 
 The actual value of `/path/to/working/directory` is the result of evaluating
@@ -52,7 +53,7 @@ the `$LDD_ROOT` variable. Due to the fact that the final `mount` command is
 executed in QEMU guest in which the `$LDD_ROOT` variable is not accessible, you
 have to expand this variable manually to its real absolute path.
 
-# Auto mount NFS in guest
+## Auto mount NFS in guest
 
 For agile development, manually mounting this NFS filesystem each time the QEMU
 guest booting is time-consuming. It is extremely unfriendly for the development
@@ -68,20 +69,19 @@ mount -t nfs -o nolock host_machine:/path/to/working/directory /mnt
 Then, rebuild the initramfs.
 
 ```bash
-cd $LDD_ROOT/initramfs
-
-find . -print0 | cpio --null -ov --format=newc | gzip -9 > ../initramfs.cpio.gz
+ldd-build-ramfs.sh
 ```
 
-# ¶ The end
+## ¶ The end
 
 ---
 
-# Reference
+## Reference
 
 1. [http://www.nathanfriend.co.uk/nfs-refused-mount-illegal-port/][1]
-
+2. [https://stackoverflow.com/a/75644037][2]
 
 [1]: http://www.nathanfriend.co.uk/nfs-refused-mount-illegal-port/
+[2]: https://stackoverflow.com/a/75644037
 
 ---

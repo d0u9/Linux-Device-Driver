@@ -19,7 +19,7 @@ The `telnet` server in the Busybox is named `telnetd`; it only provides
 fundamental functionalities compared to a complete version of the telnet server
 usually installed via the package manager on a regular Linux distribution.
 
-# Setup pts device node
+## Setup pts device node
 
 It must have a **pts** device node exist to make Busybox function correctly.
 Create the device node by invoking:
@@ -34,7 +34,6 @@ mknod -m 666 dev/ptmx c 5 2
 Automatically mount the `devpts` device during the boot time by appending the
 line below to the `init` script after the nfs mount line.
 
-
 ```bash
 mount -t devpts devpts  /dev/pts
 ```
@@ -42,12 +41,10 @@ mount -t devpts devpts  /dev/pts
 Then, rebuild the initramfs.
 
 ```bash
-cd $LDD_ROOT/initramfs
-
-find . -print0 | cpio --null -ov --format=newc | gzip -9 > ../initramfs.cpio.gz
+ldd-build-ramfs.sh
 ```
 
-# Before initiating telnet server
+## Before initiating telnet server
 
 Typically, `telnet` uses port 23 as its default port. However, due to the
 default networking backend opted by QEMU, the "User Networking",  accessing
@@ -55,8 +52,8 @@ port 23 of a guest machine is not straightforward. In contrast to the simple
 and easy using and no privilege is required of this backend, its drawback is
 evident as well:
 
-    - Performance punishment.
-    - The guest is not directly accessible from the host.
+- Performance punishment.
+- The guest is not directly accessible from the host.
 
 The inability to access the guest imposed by QEMU's networking backend is
 crucial to the problem of connecting the telnet server from the host. To
@@ -74,11 +71,12 @@ command:
 The options instruct QEMU to use an e1000 NIC and forward the TCP port 23 from
 the guest to 7023 on the host.
 
-# Test telnetd in QEMU guest
+## Test telnetd in QEMU guest
 
 Boot your QEMU guest, and run the command in it to start the telnet server:
 
 ```bash
+# On Guest
 telnetd -F -l /bin/sh
 ```
 
@@ -87,7 +85,8 @@ testing the network connection.
 
 On the host side, connect to the telnet server in the QEMU guest by running:
 
-```
+```bash
+# On Host
 telnet localhost 7023
 ```
 
@@ -95,21 +94,22 @@ On successful, you will get the shell promoter in the terminal. Next, make this
 telnetd server start automatically again by writing the line in the `init`
 script.
 
-# Automatic start for telnetd service.
+## Automatic start for telnetd service
 
 Add the line below in your init script:
 
 ```bash
+# Add to initd
 telnetd -l /bin/sh
+
+# Rebuild ramfs
+ldd-build-ramfs.sh
 ```
+
 ---
 
-# ¶ The end
+## ¶ The end
 
 1. [QEMU Networking][1]
 
 [1]: https://wiki.qemu.org/Documentation/Networking
-
-
-
-

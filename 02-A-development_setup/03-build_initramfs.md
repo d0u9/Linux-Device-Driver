@@ -130,7 +130,7 @@ EOF
 ```bash
 # Create a helper script
 
-cat << EOF > $LDD_ROOT/bin/ldd_ramfs.sh
+cat << EOF > $LDD_ROOT/bin/ldd-build-ramfs.sh
 #!/bin/bash
 
 cd \$LDD_ROOT/initramfs
@@ -138,7 +138,7 @@ cd \$LDD_ROOT/initramfs
 find . -print0 | cpio --null -ov --format=newc | gzip -9 > ../initramfs.cpio.gz
 EOF
 
-chmod +x $LDD_ROOT/bin/ldd_ramfs.sh 
+chmod +x $LDD_ROOT/bin/ldd-build-ramfs.sh 
 ```
 
 ## Run our kernel in QEMU
