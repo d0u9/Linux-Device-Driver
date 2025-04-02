@@ -31,6 +31,9 @@ mount -t nfs -o nolock host_machine:/home/doug/projects/ldd /mnt
 # Start telnetd service
 telnetd -l /bin/sh
 
+# Our examples
+export EXPDIR=/mnt/Linux-Device-Driver/99-Examples
+
 # Make the new shell as a login shell with -l option
 # Only login shell read /etc/profile
 setsid sh -c 'exec sh -l </dev/ttyS0 >/dev/ttyS0 2>&1'

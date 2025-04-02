@@ -89,6 +89,10 @@ right? The Makefile created before seems not to be used at all. That is due to
 the peculiarity of how the kernel's build system works. We will talk about this
 in detail later.
 
+The command above used here is compiling our `hello world` module against the
+kernel version shipped by your Linux vendor, for me, that is Ubuntu. It is not
+compiled against the kernel, ${KERNEL_VERSION}, we downloaded from kernel.org before.
+
 The loadable module file, suffixed with '.ko', is created if the `make` command
 issues no error. Curious readers who wonder about the kernel module file's file
 format can use the `file` command to inspect the detailed information of the
@@ -122,6 +126,10 @@ them in the control terminal.
 ```bash
 dmesg
 ```
+
+For some hosts, `dmesg` is restricted to root user only. For those whose system
+is manmaged by systemd, instead of using `dmesg`, they can use `journalctl -k -n 10`
+to dump the kernel messages. The `-n 10` means printing the last 10 lines only.
 
 Your terminal screen maybe is flooded with various messages after executing the
 `dmesg` command. But don't worry, the "Hello, world!" message printed by example
@@ -179,20 +187,29 @@ mounted for sharing files between host and guest. Execute the commands below:
 1. On the host, recompile the module against the stable kernel:
 
     ```bash
-    make -C ~/LDD_ROOT/kernels/linux-stable M=$(pwd) modules
+    make -C $LDD_ROOT/kernel/linux-current M=$(pwd) modules
+    ```
+
+    If you previsouly compiled kernel using LLVM, do it as:
+
+    ```bash
+    make LLVM=1 -C $LDD_ROOT/kernel/linux-current M=$(pwd) modules 
     ```
 
 2. load and test in guest:
 
     ```bash
+    # On host
+
     # This is an auxiliary shell script created before.
-    qemu_run.sh
-    
-    # Change to the NFS sharing direcotry. It is mounted at /mnt directory.
-    cd /mnt
-    
+    ldd-launch.sh
+    ```
+
+    ```bash
+    # On Guest
+
     # Change to our example directory
-    cd /mnt/Linux-Device-Driver/eg_01_hello_world
+    cd $EXPDIR/C/01-hello_world
     
     # Insert module
     insmod hello_world.ko

@@ -29,6 +29,13 @@ EOF
 source "$LDD_ROOT/lddshim.sh"
 ```
 
+## Clone this repo
+
+```bash
+cd $LDD_ROOT
+git clone https://github.com/d0u9/Linux-Device-Driver.git
+```
+
 ## Download Linux Source
 
 Linux kernel sources of different versions are listed on its official web, [The Linux Kernel Archives].

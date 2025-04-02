@@ -46,6 +46,10 @@ Mount host's NFS filesystem in QEMU guest:
 
 ```bash
 mount -t nfs -o nolock host_machine:$LDD_ROOT /mnt
+
+# It is good to add an environment variable pointing to the directory hosting examples
+# Add this line in ramfs' init
+EXPDIR=/mnt/Linux-Device-Driver/99-Examples
 ```
 
 The actual value of `/path/to/working/directory` is the result of evaluating
