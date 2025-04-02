@@ -33,7 +33,7 @@ Setup NFS server to export a working directory:
 
 ```bash
 sudo bash -c "echo \
-    '$LDD_ROOT        127.0.0.1(insecure,rw,sync,no_root_squash)' \
+    '$LDD_ROOT/nfs_root        127.0.0.1(insecure,rw,sync,no_root_squash)' \
     >> /etc/exports"
 ```
 
@@ -45,7 +45,7 @@ request from 127.0.0.1 for /xxxx (/xxx): illegal port xxxx" will report.
 Mount host's NFS filesystem in QEMU guest:
 
 ```bash
-mount -t nfs -o nolock host_machine:$LDD_ROOT /mnt
+mount -t nfs -o nolock host_machine:$LDD_ROOT/nfs_root /mnt
 
 # It is good to add an environment variable pointing to the directory hosting examples
 # Add this line in ramfs' init

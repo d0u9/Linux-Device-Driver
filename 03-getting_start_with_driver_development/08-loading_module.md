@@ -16,7 +16,7 @@ terminal.
 
 The first check is the version dependency. Have you remembered the command used
 before in building the kernel module? A path to the kernel source tree is given
-as a `-C` option's parameter, i.e. `~/LDD_ROOT/kernels/linux-5.10.4`. This path
+as a `-C` option's parameter, i.e. `$LDD_ROOT/kernel/linux-current`. This path
 provides the desired kernel version that the module will be compiled against.
 Keep in mind that the Linux kernel is an actively developing project in which
 functions are added, removed, and modified frequently. So, a kernel module built
@@ -24,15 +24,15 @@ against a specific version may encounter errors of undefined symbols if it is
 loaded on a different host with an incorrect version of the kernel. So to that,
 version dependency is critical.
 
-As an experiment, we build a "hello_world" module against Linux 5.10.4, which
+As an experiment, we build a "hello_world" module against Linux ${KERNEL_VERSION}, which
 is the default kernel version in this book, and then load it into the host. If
-the host's kernel version is not "5.10.4", the loader will report an error
+the host's kernel version is not "${KERNEL_VERSION}", the loader will report an error
 during load time.
 
-My Ubuntu host shipped with kernel 5.4.0, the error is:
+My Ubuntu host shipped with kernel 6.8, the error is:
 
 ```
-# Module is compiled against kernel 5.10.4, but loaded on host with kernel 5.4.0
+# Module is compiled against kernel ${KERNEL_VERSION}, but loaded on host with kernel 6.8.0
 # insmod version is "kmod version 27"
 insmod: ERROR: could not insert module hello_world.ko: Invalid module format
 ```
@@ -42,7 +42,7 @@ because the `Invalid module format` doesn't precisely describe what happened.
 Using `dmesg` command to get a more specific message about the error:
 
 ```
-hello_world: version magic '5.10.4 SMP mod_unload ' should be '5.4.0-59-generic SMP mod_unload '
+hello_world: version magic '${KERNEL_VERSION} SMP mod_unload ' should be '5.4.0-59-generic SMP mod_unload '
 ```
 
 Obviously, the log gives the real reason that breaks the loading process, i.e.

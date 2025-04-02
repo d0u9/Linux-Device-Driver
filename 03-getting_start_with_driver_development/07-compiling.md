@@ -135,7 +135,7 @@ Other details in this command worthing a note are the `-C` option, `M` option
 and `modules` target. `-C` is a standard make option, which instructs make doing
 a directory changing before doing any actual actions. In our example above, the
 `make` command first changes its working directory to
-`~/LDD_ROOT/kernels/linux-5.10.4` and starts building the `modules` target
+`$LDD_ROOT/kernel/linux-current` and starts building the `modules` target
 defined in the kernel's top-level makefile. The `M` is a make variable that
 informs the kbuild system that an extern module is going to be built. The value
 assigned to `M` is the directory where the module's kbuild file(makefile or

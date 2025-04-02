@@ -12,6 +12,9 @@ cat << EOF > $LDD_ROOT/initramfs/init
 mount -t proc none /proc
 mount -t sysfs none /sys
 
+# Mount devpts
+mount -t devpts devpts  /dev/pts
+
 # Boot real things.
 
 # NIC up
@@ -19,14 +22,11 @@ ip link set eth0 up
 ip addr add 10.0.2.15/24 dev eth0
 ip link set lo up
 
-# Mount devpts
-mount -t devpts devpts  /dev/pts
-
 # Wait for NIC ready
 sleep 0.5
 
 # Mount nfs
-mount -t nfs -o nolock host_machine:/home/doug/projects/ldd /mnt
+mount -t nfs -o nolock host_machine:/home/doug/projects/ldd/nfs_root /mnt
 
 # Start telnetd service
 telnetd -l /bin/sh

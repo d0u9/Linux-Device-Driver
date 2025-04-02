@@ -1,12 +1,12 @@
 # Linux-Device-Driver
 
-Examples of Linux Device Drivers, currently for kernel 5.10.
+Examples of Linux Device Drivers, currently for kernel 6.14.
 
 # NOTE: Apologies for the delay in maintaining this project, sincerely.
 
 # Before start
 
-The examples in this repo are compiled against Linux Kernel 5.10. Other versions
+The examples in this repo are compiled against Linux Kernel 6.14. Other versions
 of the Kernel are not tested.
 
 Set `KERNELDIR` environment variable to the Linux kernel source dir, and export 
@@ -39,7 +39,7 @@ published in 2005, some of the APIs and data structures have drastically
 changed after its first publication.
 
 Compare to the Kernel 2.6.10, which is the base of the LDD3 book, I rewrite all 
-the examples for a brand new Kernel version 5.10, released in December 2020.
+the examples for a brand new Kernel version 6.14, released in December 2020.
 Besides the kernel version, the hardware also has evolved a lot in recent years.
 The parallel port, which is used as an example in I/O operations in LDD3, can be
 barely found in any computer now. I moved these examples to a QEMU(A generic

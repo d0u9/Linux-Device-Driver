@@ -87,11 +87,7 @@ make -j bzImage
 make -j modules
 ```
 
-### With Rust
-
-However, GCC compiler doesn't support Rust compiling at current time. It is LLVM compiler used to generating rust objective files in the kernel.
-
-Than means, if you have enabled RUST and want to compile all rust parts, do it as:
+Or, use LLVM.
 
 ```bash
 make LLVM=1 -j bzImage

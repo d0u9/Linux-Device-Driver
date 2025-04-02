@@ -2,12 +2,28 @@
 
 To prevent playing around with this repo from messing up your system, we need to set up the enviroment properly to create isolated environment for running examples. (It is not completely isolated, for example, the rust is installed user-wide).
 
-## The root environment variables
+## Create shim file
 
 ```bash
-export LDD_ROOT=/path/to/dir/hosting/the/repo
-export KERNEL_VERSION=6.12.21
+cat << EOF > "$LDD_ROOT/bin/ldd-shim.sh"
+export PATH="$LDD_ROOT/bin:\$PATH"
+export LD_LIBRARY_PATH="$LDD_ROOT/lib:\$LD_LIBRARY_PATH"
+
+# Make examples in this repo build against our kernel source tree
+export LDD_KDIR="$LDD_ROOT/kernel/linux-current"
+
+# The linux version
+export KERNEL_VERSION=6.14
+
+# The QEMU version
 export QEMU_VERSION=9.2.3
+
+# Disable this if you want to use GCC as the default compiler
+export LDD_LLVM=1
+
+EOF
+
+source "$LDD_ROOT/bin/ldd-shim.sh"
 ```
 
 The `$LDD_ROOT` is critical because it is the root hosting all our files and artifacts.
@@ -15,24 +31,13 @@ The `$LDD_ROOT` is critical because it is the root hosting all our files and art
 ## Create necessary directories
 
 ```bash
-mkdir -p "${LDD_ROOT}"/{bin,lib,source,tools,kernel,nfs_host}
-```
-
-## Create shim file
-
-```bash
-cat << EOF > "$LDD_ROOT/lddshim.sh"
-export PATH="$LDD_ROOT/bin:$PATH"
-export LD_LIBRARY_PATH="$LDD_ROOT/lib:$LD_LIBRARY_PATH"
-EOF
-
-source "$LDD_ROOT/lddshim.sh"
+mkdir -p "${LDD_ROOT}"/{bin,lib,source,tools,kernels,nfs_root}
 ```
 
 ## Clone this repo
 
 ```bash
-cd $LDD_ROOT
+cd $LDD_ROOT/nfs_root
 git clone https://github.com/d0u9/Linux-Device-Driver.git
 ```
 
@@ -50,10 +55,12 @@ Here, we directly download the kernel source tarball from the official website a
 To download and extract the source ball:
 
 ```bash
-cd $LDD_ROOT/kernel
+cd $LDD_ROOT/kernels
+
 wget https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-${KERNEL_VERSION}.tar.xz
 tar -xf linux-${KERNEL_VERSION}.tar.xz
-mv linux-${KERNEL_VERSION} linux-current
+
+ln -s linux-${KERNEL_VERSION} linux-current
 ```
 
 ## Prepare Rust Toolchain
@@ -64,10 +71,11 @@ Linux has officially supports Rust in the latest kernel, and if you want to test
 
 You can run below command in the Linux source tree to test what tools are lost.
 
+
 ```bash
 cd $LDD_ROOT/kernel/linux-current
 
-make LLVM=1 rustavailable
+make rustavailable
 ```
 
 ## Install Rust Toolchain for buiding rust code
@@ -110,7 +118,7 @@ cd $LDD_ROOT/lib
 ln -s ../tools/llvm/lib/* .
 ```
 
-NOTE: Don't forget to run `source "$LDD_ROOT/lddshim.sh"` once you started a new shell.
+NOTE: Don't forget to run `source "$LDD_ROOT/bin/ldd-shim.sh"` once you started a new shell.
 
 ## For rust developers
 
@@ -139,8 +147,28 @@ rustup component add clippy
 ```bash
 cd $LDD_ROOT/kernel/linux-current
 
-make LLVM=1 rust-analyzer
+make rust-analyzer
 ```
+
+## LLVM vs GCC
+
+For the best support of Rust in Linux, it is recommended to always use LLVM, because GCC for rust is very experimental at the moment.
+
+If you want to use LLVM as the compiler, add this line below.
+
+```bash
+echo "export LDD_LLVM=1" >> "$LDD_ROOT/bin/ldd-shim.sh"
+
+source "$LDD_ROOT/bin/ldd-shim.sh"
+```
+
+Or you can always feed make command `LLVM=1` at anytime you want to use LLVM instead of GCC.
+
+```bash
+make LLVM=1 ...
+```
+
+In this repo, we stick to using LLVM as the default compiler all the time to prevent strange errors.
 
 Reference:
 
