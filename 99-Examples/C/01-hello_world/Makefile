@@ -4,19 +4,20 @@ ifneq ($(KERNELRELEASE),)
 module-objs := hello_world.o
 obj-m := hello_world.o
 
-CFLAGS_hello_world.o := -DDEBUG
+CFLAGS_hello_world.o += $(CFLAGS)
 
 else
+
 # In normal make context
-KERNELDIR ?= /lib/modules/$(shell uname -r)/build
+include ../../kmod.mk
 PWD := $(shell pwd)
 
 .PHONY: modules
 modules:
-	$(MAKE) -C $(KERNELDIR) M=$(PWD) modules
+	$(MAKE) $(BUILD_OPTS) -C $(LDD_KDIR) M=$(PWD) modules
 
 .PHONY: clean
 clean:
-	$(MAKE) -C $(KERNELDIR) M=$(PWD) clean
+	$(MAKE) $(BUILD_OPTS) -C $(LDD_KDIR) M=$(PWD) clean
 
 endif
