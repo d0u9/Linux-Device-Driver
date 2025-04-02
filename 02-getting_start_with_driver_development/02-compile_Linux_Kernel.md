@@ -1,25 +1,5 @@
 # Compile Linux Kernel
 
-## Download Source
-
-Linux kernel sources of different versions are listed on its official web, [The Linux Kernel Archives].
-
-At the time I write this documentation, the latest stable kernel version is
-**5.10.4**, and the examples in this book are implemented against this version.
-
-There are many ways to obtain the kernel source. For example, download a tarball directly, make a git clone from the official's git repo, or even get a new version by patching an old one.
-
-Here, we directly download the kernel source tarball from the official website and extract it locally in `$LDD_ROOT/kernel/` directory.
-
-To download and extract the source ball:
-
-```bash
-cd $LDD_ROOT/kernel
-wget https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-${KERNEL_VERSION}.tar.xz
-tar -xf linux-${KERNEL_VERSION}.tar.xz
-mv linux-${KERNEL_VERSION} linux-current
-```
-
 ## Configure Linux Kernel
 
 As [LFS] says:
@@ -82,7 +62,23 @@ Disable unnecessary components:
       [ ]   Wireless  ----
     ```
 
+## More with Rust Configuration
+
+Rust support is turned of by default, and you have to enable it in the kernel configuraion
+onece you want to dev on rust.
+
+```text
+  General setup  --->
+    [*] Rust support
+```
+
+Be aware that this option only appears if you have the rust toolchina properly configured on your host.
+
 ## Compiling
+
+### Without Rust
+
+Tranditionally, compiling the Kenel uses GCC compiler by default.
 
 ```bash
 make -j bzImage
@@ -91,7 +87,17 @@ make -j bzImage
 make -j modules
 ```
 
+### With Rust
+
+However, GCC compiler doesn't support Rust compiling at current time. It is LLVM compiler used to generating rust objective files in the kernel.
+
+Than means, if you have enabled RUST and want to compile all rust parts, do it as:
+
+```bash
+make LLVM=1 -j bzImage
+make LLVM=1 -j modules
+```
+
 ## ¶ The end
 
-[The Linux Kernel Archives]: https://www.kernel.org/
 [LFS]: http://www.linuxfromscratch.org/lfs/view/stable/chapter08/kernel.html

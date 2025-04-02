@@ -7,10 +7,10 @@ In this chapter, a list of directories is presented here in which all the
 necessary software and tools are itemized.
 
 During the following chapters later, the working directory including everything
-is referenced as the `ldd_root` directory. Relative paths encountered later are
-referenced against the `ldd_root` until an explicit note is made.
+is referenced as the `$LDD_ROOT` directory. Relative paths encountered later are
+referenced against the `$LDD_ROOT` until an explicit note is made.
 
-## Export LDD_ROOT environment variable
+## Export `$LDD_ROOT` environment variable
 
 ```bash
 export LDD_ROOT=/path/to/your/ldd_root/
