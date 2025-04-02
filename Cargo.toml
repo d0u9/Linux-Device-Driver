@@ -1,0 +1,10 @@
+[package]
+name = "tools"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+name = "tools"
+path = "77-tools/main.rs"
+
+[dependencies]

@@ -41,6 +41,13 @@
 *.swp
 *.mod
 
+# Rust specific ignores
+target/
+Cargo.lock
+**/*.rs.bk
+*.rlib
+
+
 # ignore directories created underneath for builds
 qemu/
 kernel/
