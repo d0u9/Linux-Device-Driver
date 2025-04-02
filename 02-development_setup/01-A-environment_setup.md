@@ -55,12 +55,24 @@ Here, we directly download the kernel source tarball from the official website a
 To download and extract the source ball:
 
 ```bash
-cd $LDD_ROOT/kernels
+cd $LDD_ROOT/kernel/
 
 wget https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-${KERNEL_VERSION}.tar.xz
 tar -xf linux-${KERNEL_VERSION}.tar.xz
 
+rm linux-current
 ln -s linux-${KERNEL_VERSION} linux-current
+```
+
+If you want to use the lastest rust brach:
+
+```bash
+cd $LDD_ROOT/kernel/
+
+git clone --depth=1 https://github.com/Rust-for-Linux/linux.git linux-rust
+
+rm linux-current
+ln -s linux-rust linux-current
 ```
 
 ## Prepare Rust Toolchain

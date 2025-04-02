@@ -29,6 +29,6 @@ module_init(m_init);
 module_exit(m_exit);
 
 MODULE_LICENSE("GPL");
-MODULE_AUTHOR("d0u9");
+MODULE_AUTHOR("Douglas Su");
 MODULE_DESCRIPTION("Module parameters test program");
 
