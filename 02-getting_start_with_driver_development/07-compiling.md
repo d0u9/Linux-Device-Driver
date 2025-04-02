@@ -96,8 +96,8 @@ with programming in the userspace since no "target" is defined. Actually, the
 kbuild system defines the "modules" target in its makefile, and that target is
 used to build kernel modules out of the source tree by invoking the command:
 
-```
-make -C ~/LDD_ROOT/kernels/linux-5.10.4 M=$(pwd) modules
+```bash
+make -C $LDD_ROOT/kernel/linux-current M=$(pwd) modules
 ```
 
 Note the "modules" target in the above make command.
@@ -121,7 +121,7 @@ names to the `XXX-objs` variable and then reference this `XXX` later in `obj-m`
 variable is sufficient. For example, if the "hello_world.ko" is linked from two
 object files, say `source1.o` and `source2.o`, the correct makefile is:
 
-```
+```makefile
 obj-m := hello_world.o
 hello_world-objs := source1.o source2.o
 ```
@@ -155,7 +155,7 @@ Traditionally, a "double-entering" makefile technique is used. The
 "double-entering" means that the make command reads the makefile twice during
 the building process:
 
-```
+```makefile
 # Normally, kernel's build system defines the KERNELRELEASE variable.
 # Users can determine which context our make process is in by validing if
 # KERNELRELEASE is defined.
@@ -183,7 +183,7 @@ clean:
 endif
 ```
 
-This makefile seems a bit complex, but don't worry, it is still simple.  The 
+This makefile seems a bit complex, but don't worry, it is still simple.  The
 whole makefile can be divided into two parts by an `if-else` statement. The
 first part can only be seen in the kernel's kbuild context with the
 `KERNELRELEASE` variable set; the second part can be seen in the normal make
@@ -212,13 +212,13 @@ that doesn't present will it then look for a makefile. This search sequence
 gives flexibility that splits our two-entering makefile explicitly into two
 files.
 
-```
+```makefile
 # file Kbuild
 module-objs := hello_world.o
 obj-m := hello_world.o
 ```
 
-```
+```makefile
 # file Makefile
 KDIR ?= /lib/modules/$(shell uname -r)/build
 PWD := $(shell pwd)
@@ -263,32 +263,29 @@ A few of make targets are available when building an external module.
     variable, `INSTALL_MOD_PATH`, to the make command. For example, to install
     generated `.ko` file to `/kmods`:
 
-    ```
+    ```bash
     make INSTALL_MOD_PATH=/kmods` modules_install
     ```
 
     The `.ko` file, say `hello_world.ko`, will appear in
     `/kmods/lib/modules/$(uname -r)/extra/`
 
-
 - `clean`:
 
     Remove all genereated files in the module directory.
-
 
 - `help`:
 
     Dump a help message.
 
-
 Usage of these targets is simple; we have seen the example of `modules` target
 before in the "hello_world" module building. A more formulatic description is
 given below for a quick reference.
 
-```
+```bash
 make -C $KDIR M=$PWD [target]
 ```
 
 Replace target with any one listed above according to your need.
 
-# ¶ The end
+## ¶ The end
