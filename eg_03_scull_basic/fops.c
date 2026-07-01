@@ -69,8 +69,8 @@ ssize_t scull_read(struct file *filp, char __user *buff, size_t count,
 		goto end_of_file;
 	}
 
-	if (count > pblock->offset)
-		count = pblock->offset;
+	if (count > pblock->offset - toffset)
+		count = pblock->offset - toffset;
 
 	if (copy_to_user(buff, pblock->data, count)) {
 		retval = -EFAULT;
