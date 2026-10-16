@@ -150,10 +150,10 @@ static int ldd_tty_printk(struct ldd_tty_dev *ldd_dev,
  * If you really want to sleep, make sure to check first whether the driver is
  * in interrupt context by calling in_interrupt().
  */
-static int ldd_tty_write(struct tty_struct *tty,
-		     const unsigned char *buf, int count)
+static ssize_t ldd_tty_write(struct tty_struct *tty,
+			     const u8 *buf, size_t count)
 {
-	int rv;
+	ssize_t rv;
 	unsigned long flags;
 	struct ldd_tty_dev *ldd_dev = tty->driver_data;
 
@@ -166,14 +166,15 @@ static int ldd_tty_write(struct tty_struct *tty,
 	return rv;
 }
 
-static int ldd_tty_write_room(struct tty_struct *tty)
+static unsigned int ldd_tty_write_room(struct tty_struct *tty)
 {
-	int rv;
+	unsigned int rv;
 	unsigned long flags;
 	struct ldd_tty_dev *ldd_dev = tty->driver_data;
 
+	/* No room to report: the return type is unsigned, so no -ENODEV. */
 	if (!ldd_dev)
-		return -ENODEV;
+		return 0;
 
 	spin_lock_irqsave(&ldd_dev->spinlock, flags);
 	rv = LDD_TTY_MAX_ROOM - ldd_dev->buffer_curr;
@@ -184,7 +185,7 @@ static int ldd_tty_write_room(struct tty_struct *tty)
 #define INTEREST_IFLAGS		(IGNBRK|BRKINT|IGNPAR|PARMRK|INPCK)
 
 static void ldd_tty_set_termios(struct tty_struct *tty,
-				struct ktermios *old_termios)
+				const struct ktermios *old_termios)
 {
 	unsigned int cflag;
 	cflag = tty->termios.c_cflag;
@@ -360,10 +361,6 @@ int __init m_init(void)
 {
 	int rv = -ENOMEM, i;
 
-	/*
-	 * alloc_tty_driver is deprecated
-	 */
-	// ldd_tty_driver = alloc_tty_driver(LDD_TTY_MINOR_NR);
 	ldd_tty_driver = tty_alloc_driver(LDD_TTY_MINOR_NR,
 					  TTY_DRIVER_RESET_TERMIOS |
 					  TTY_DRIVER_REAL_RAW);
@@ -373,7 +370,7 @@ int __init m_init(void)
 	ldd_dev_table = kcalloc(LDD_TTY_MINOR_NR,
 				sizeof(struct ldd_tty_dev), GFP_KERNEL);
 	if (!ldd_dev_table) {
-		put_tty_driver(ldd_tty_driver);
+		tty_driver_kref_put(ldd_tty_driver);
 		return -ENOMEM;
 	}
 
@@ -397,7 +394,7 @@ int __init m_init(void)
 
 	rv = tty_register_driver(ldd_tty_driver);
 	if (rv < 0) {
-		put_tty_driver(ldd_tty_driver);
+		tty_driver_kref_put(ldd_tty_driver);
 		goto err;
 	}
 
@@ -405,7 +402,7 @@ int __init m_init(void)
 	return 0;
 
 err:
-	put_tty_driver(ldd_tty_driver);
+	tty_driver_kref_put(ldd_tty_driver);
 	for (i = 0; i < LDD_TTY_MINOR_NR; ++i) {
 		tty_port_destroy(&ldd_dev_table[i].port);
 	}
@@ -437,7 +434,7 @@ void __exit m_exit(void)
 	}
 
 	kfree(ldd_dev_table);
-	put_tty_driver(ldd_tty_driver);
+	tty_driver_kref_put(ldd_tty_driver);
 }
 
 module_init(m_init);

@@ -1,4 +1,6 @@
 #include <stdio.h>
+#include <unistd.h>
+#include <arpa/inet.h>
 #include <stdlib.h>
 
 #include <netdb.h>
