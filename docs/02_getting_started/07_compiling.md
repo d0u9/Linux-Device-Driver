@@ -17,8 +17,8 @@ The most critical tools essential to compiling kernel sources are `make` and
 `gcc`. Both tools are GNU software, which means they are free and open source.
 
 Linux kernel itself is a large project containing millions of lines of code.
-Besides, Linux is a monolithic kernel in that each component must be linked
-into one single binary. What makes things worse is that Linux can be tailored
+Linux is a monolithic kernel: built-in components are linked into the kernel
+image, while loadable modules are built separately as `.ko` files. What makes things worse is that Linux can be tailored
 and run on different hardware platforms with various CPU chips. These make
 Linux's build system a monster that can be configured by enabling or disabling
 some parts and only compiles components that are touched during configuration.
@@ -28,9 +28,8 @@ handle all these problems. It is a large and complex build system that depends
 on a few scripts and tools. Most Makefiles within the kernel are kbuild
 Makefiles that use the kbuild infrastructure. Actually, the Makefile used in
 the "hello world" example is a kbuild makefile which takes on rules of Makefile
-because it is based on a regular makefile. For the newer kernel versions, the
-preferred file name for the kbuild files is 'Makefile', but 'Kbuild' can be used
-flawlessly. If both 'Makefile' and 'Kbuild' files exist, the kbuild system will
+because it is based on a regular makefile. Both 'Makefile' and 'Kbuild' can
+be used. If both 'Makefile' and 'Kbuild' files exist, the kbuild system will
 use the 'Kbuild' file.
 
 There are many tools for building a project, such as "CMake" or "bazel", in
@@ -75,7 +74,7 @@ Insufficient GCC version is the potential root of various problems which are
 mysterious. Linux Kernel heavily depends on GCC, which means the mismatch of GCC
 version and kernel version can lead to errors during compiling time. Kernel's
 documentation lists the minimal required tools to compile Linux kernel and
-kernel modules. Reading this list in `Documentation/Changes` in the kernel's
+kernel modules. Reading this list in `Documentation/process/changes.rst` in the kernel's
 documentation directory and checking if the tools you are preparing to use are
 eligible are always the best practices.
 
@@ -96,8 +95,10 @@ with programming in the userspace since no "target" is defined. Actually, the
 kbuild system defines the "modules" target in its makefile, and that target is
 used to build kernel modules out of the source tree by invoking the command:
 
-```
-make -C ~/LDD_ROOT/kernels/linux-5.10.4 M=$(pwd) modules
+**RUN ON HOST:** From the module source directory:
+
+```bash
+make -C "$LDD_ROOT/src/linux-stable" M="$(pwd)" modules
 ```
 
 Note the "modules" target in the above make command.
@@ -107,11 +108,11 @@ system that we have a target kernel object named "hello_world.o" to compile. The
 value name assigned to `obj-m` variable is the name of generated kernel module
 with the replacement from `.o` to `.ko`. The kernel module file itself is a
 typical object file with some "modifications". But why do we use `hello_world.o`
-instead of `hello_world.c` here? It is due to make's implicit rules. The `make`
-command has many built-in implicit rules which define the ways of creating a
-target file from a specific source file. For example, one of the built-in
-implicit rules generates the `.o` file from its counterpart `.c` file. Benefits
-from these rules, users can write concise and clear makefile.
+instead of `hello_world.c` here? It is due to kbuild's pattern rules. The kbuild
+system provides rules which define the ways of creating a
+target file from a specific source file. For example, one of these
+pattern rules generates the `.o` file from its counterpart `.c` file. With
+these rules, users can write concise and clear makefiles.
 
 In some projects, the kernel module file is compiled and linked from many source
 files. For that situation, append these file names right after `obj-m` variable
@@ -121,7 +122,7 @@ names to the `XXX-objs` variable and then reference this `XXX` later in `obj-m`
 variable is sufficient. For example, if the "hello_world.ko" is linked from two
 object files, say `source1.o` and `source2.o`, the correct makefile is:
 
-```
+```makefile
 obj-m := hello_world.o
 hello_world-objs := source1.o source2.o
 ```
@@ -135,7 +136,7 @@ Other details in this command worth noting are the `-C` option, `M` option
 and `modules` target. `-C` is a standard make option, which instructs make doing
 a directory changing before doing any actual actions. In our example above, the
 `make` command first changes its working directory to
-`~/LDD_ROOT/kernels/linux-5.10.4` and starts building the `modules` target
+`$LDD_ROOT/src/linux-stable` and starts building the `modules` target
 defined in the kernel's top-level makefile. The `M` is a make variable that
 informs the kbuild system that an external module is going to be built. The value
 assigned to `M` is the directory where the module's kbuild file(makefile or
@@ -155,7 +156,7 @@ Traditionally, a "double-entering" makefile technique is used. The
 "double-entering" means that the make command reads the makefile twice during
 the building process:
 
-```
+```makefile
 # Normally, kernel's build system defines the KERNELRELEASE variable.
 # Users can determine which context our make process is in by checking if
 # KERNELRELEASE is defined.
@@ -163,7 +164,6 @@ the building process:
 ifneq ($(KERNELRELEASE),)
 
 # In kbuild context
-module-objs := hello_world.o
 obj-m := hello_world.o
 
 else
@@ -174,11 +174,11 @@ PWD := $(shell pwd)
 
 .PHONY: modules
 modules:
-	$(MAKE) -C $(KDIR) M=$(PWD) modules
+	$(MAKE) -C "$(KDIR)" M="$(PWD)" modules
 
 .PHONY: clean
 clean:
-	$(MAKE) -C $(KDIR) M=$(PWD) clean
+	$(MAKE) -C "$(KDIR)" M="$(PWD)" clean
 
 endif
 ```
@@ -204,7 +204,9 @@ the kernel's kbuild system will take care of the actual building of the module.
 
 If you want the module to be compiled against a specific kernel tree, supply
 the `KDIR=` option on the command line with an absolute path that points to the
-correct kernel source. That is pretty enough.
+correct kernel build tree. For this tutorial, run
+`make KDIR="$LDD_ROOT/src/linux-stable"` on the host; the default above
+selects the running host kernel.
 
 In newer versions of the kernel, the "Kbuild" file takes precedence over the
 "Makefile". The kbuild will first look for a file named "Kbuild", and only if
@@ -212,39 +214,36 @@ that doesn't present will it then look for a makefile. This search sequence
 gives flexibility that splits our two-entering makefile explicitly into two
 files.
 
-```
+```makefile
 # file Kbuild
-module-objs := hello_world.o
 obj-m := hello_world.o
 ```
 
-```
+```makefile
 # file Makefile
 KDIR ?= /lib/modules/$(shell uname -r)/build
 PWD := $(shell pwd)
 
 .PHONY: modules
 modules:
-	$(MAKE) -C $(KDIR) M=$(PWD) modules
+	$(MAKE) -C "$(KDIR)" M="$(PWD)" modules
 
 .PHONY: clean
 clean:
-	$(MAKE) -C $(KDIR) M=$(PWD) clean
+	$(MAKE) -C "$(KDIR)" M="$(PWD)" clean
 ```
 
-The `make` command can only see makefile; kbuild system stops after processing
-`Kbuild` file. The split makes things clear and concise.
+The initial `make` reads `Makefile`; the recursive kbuild invocation reads
+`Kbuild` for the module definitions. The split makes things clear and concise.
 
 ## Compiling flags
 
 Compiling flags such as `-DDEBUG` can be specified by `ccflags-y` variable or
 `CFLAGS_<filename>.o` variable. The difference between these two forms is that
-the latter only applies to a single source file. For example, the kbuild system
-uses ISO C98 by default, an ancient standard with many new features unsupported.
-Declaring to use another modern standard, say the `gnu99`, by adding the
-`ccflags-y := -std=gnu99` flag in your Makefile's kbuild context. Another way
-to specify the `CFLAGS` only to a single object compilation is adding
-`CFLAGS_source1.o := -std=gnu99`.
+the latter only applies to a single source file. For example, add
+`ccflags-y += -DDEBUG` in your Makefile's kbuild context to enable debug
+messages for all C files in this directory. To apply the flag only to
+`source1.o`, use `CFLAGS_source1.o += -DDEBUG` instead.
 
 ## Makefile targets
 
@@ -258,17 +257,21 @@ A few of make targets are available when building an external module.
 - `modules_install`:
 
     Install the external module just built. By default, `modules_install` target
-    uses `/lib/modules/($uname -r)/extra/` directory as its installation
+    uses `/lib/modules/<kernel_release>/updates/` as its installation
     location. Users can point to their installation path by feeding a special
     variable, `INSTALL_MOD_PATH`, to the make command. For example, to install
-    generated `.ko` file to `/kmods`:
+    generated `.ko` file into the workspace initramfs:
 
-    ```
-    make INSTALL_MOD_PATH=/kmods` modules_install
+    **RUN ON HOST:** From the module source directory:
+
+    ```bash
+    make -C "$LDD_ROOT/src/linux-stable" M="$(pwd)" \
+        INSTALL_MOD_PATH="$LDD_ROOT/initramfs" modules_install
     ```
 
     The `.ko` file, say `hello_world.ko`, will appear in
-    `/kmods/lib/modules/$(uname -r)/extra/`
+    `$LDD_ROOT/initramfs/lib/modules/<kernel_release>/updates/`, where
+    `<kernel_release>` is the target kernel release, not the host's `uname -r`.
 
 
 - `clean`:
@@ -285,8 +288,8 @@ Usage of these targets is simple; we have seen the example of `modules` target
 before in the "hello_world" module building. A more formulaic description is
 given below for a quick reference.
 
-```
-make -C $KDIR M=$PWD [target]
+```text
+make -C "$KDIR" M="$PWD" [target]
 ```
 
 Replace target with any one listed above according to your need.
