@@ -18,8 +18,8 @@ Excerpt from [Linux kernel documentation]:
 
 ```bash
 # Create initramfs directory
-mkdir $LDD_ROOT/initramfs
-cd $LDD_ROOT/initramfs
+mkdir -p "$LDD_ROOT/initramfs"
+cd "$LDD_ROOT/initramfs"
 
 # Create necessary directories
 mkdir -p {bin,dev,etc,lib,lib64,mnt,proc,root,sbin,sys,tmp}
@@ -27,8 +27,11 @@ mkdir -p {bin,dev,etc,lib,lib64,mnt,proc,root,sbin,sys,tmp}
 # Set Permission
 chmod 1777 tmp
 
-# Copy necessary device files from host, root privilege maybe needed.
-cp -a /dev/{null,console,tty,ttyS0} dev/
+# Create guest device nodes without depending on the host's serial devices.
+sudo mknod -m 666 dev/null c 1 3
+sudo mknod -m 600 dev/console c 5 1
+sudo mknod -m 666 dev/tty c 5 0
+sudo mknod -m 600 dev/ttyS0 c 4 64
 ```
 
 # Install busybox
@@ -41,13 +44,14 @@ cp -a /dev/{null,console,tty,ttyS0} dev/
 > very much like their GNU counterparts. BusyBox provides a fairly complete
 > environment for any small or embedded system.
 
-**busybox** is distributed as a static linked binary. User can find all history
-and latest versions on [busybox's official web page].
+Use the official BusyBox **1.35.0 x86_64 musl** static binary from
+[BusyBox's binary downloads]. This matches the 64-bit guest without requiring
+`CONFIG_IA32_EMULATION`.
 
 ```bash
-cd $LDD_ROOT/initramfs
+cd "$LDD_ROOT/initramfs"
 
-wget https://www.busybox.net/downloads/binaries/1.30.0-i686/busybox -O bin/busybox
+wget https://busybox.net/downloads/binaries/1.35.0-x86_64-linux-musl/busybox -O bin/busybox
 chmod +x bin/busybox
 
 # Install busybox
@@ -65,15 +69,22 @@ for bringing the rest of the system up properly and setting up necessary
 configurations. These setups include mounting filesystems, assigning IP
 addresses for Ethernet devices, etc.
 
-```bash
-cd $LDD_ROOT/initramfs
+Enable `CONFIG_DEVTMPFS=y` in the guest kernel for the `/dev` mount below.
+It must be mounted explicitly when booting from initramfs.
 
-cat << EOF > init
+```bash
+cd "$LDD_ROOT/initramfs"
+
+cat << 'EOF' > init
 #!/bin/busybox sh
 
-# Mount the /proc and /sys filesystems.
+export PATH=/bin:/sbin
+export HOME=/root
+
+# Mount guest filesystems.
 mount -t proc none /proc
 mount -t sysfs none /sys
+mount -t devtmpfs devtmpfs /dev
 
 # Boot real things.
 
@@ -85,23 +96,31 @@ ip link set lo up
 # Wait for NIC ready
 sleep 0.5
 
-# Make the new shell as a login shell with -l option
-# Only login shell read /etc/profile
-setsid sh -c 'exec sh -l </dev/ttyS0 >/dev/ttyS0 2>&1'
+# Start a login shell and restart it on exit so PID 1 stays alive.
+while :; do
+    setsid sh -c 'exec sh -l </dev/ttyS0 >/dev/ttyS0 2>&1'
+    sleep 1
+done
 
 EOF
 
 chmod +x init
 ```
 
-The `-l` option of `setsid` command in **init** script is compulsory. That lack
-of this option will cause an error of "sh: can't access tty; job control turned
-off" during system booting. It is detailed in [BusyBox's FAQ].
+`sh -l` starts a login shell that reads `/etc/profile`. `setsid` creates a
+new session, and opening `/dev/ttyS0` gives the shell a controlling terminal
+for job control. See [BusyBox's FAQ]. Exiting the shell starts a new one;
+use QEMU's exit shortcut to stop the guest.
+
+The devtmpfs mount hides the device nodes stored in the archive and supplies
+nodes for devices registered with the driver core. Examples that only register
+a device number still need `mknod`. For the later Telnet setup, create
+`/dev/pts` after this mount, then mount devpts there.
 
 ## More setups
 
 ```bash
-cd $LDD_ROOT/initramfs
+cd "$LDD_ROOT/initramfs"
 
 # name resolve
 cat << EOF > etc/hosts
@@ -114,9 +133,9 @@ cat << EOF > etc/profile
 alias ll='ls -l'
 EOF
 
-# busybox saves password in /etc/passwd directly, no /etc/shadow is needed.
+# Root account metadata; the init script starts the shell directly.
 cat << EOF > etc/passwd
-root:x:0:0:root:/root:/bin/bash
+root:x:0:0:root:/root:/bin/sh
 EOF
 
 # group file
@@ -128,17 +147,17 @@ EOF
 # Build initramfs image.
 
 ```bash
-cd $LDD_ROOT/initramfs
+cd "$LDD_ROOT/initramfs"
 
-find . -print0 | cpio --null -ov --format=newc | gzip -9 > ../initramfs.cpio.gz
+find . -print0 | cpio --null -ov --format=newc --owner=0:0 | gzip -9 > ../initramfs.cpio.gz
 ```
 
 # Run our kernel in QEMU
 
 ```bash
 qemu -enable-kvm \
-     -kernel $LDD_ROOT/kernels/linux-5.10.4/arch/x86_64/boot/bzImage \
-     -initrd $LDD_ROOT/initramfs.cpio.gz \
+     -kernel "$LDD_ROOT/src/linux-stable/arch/x86/boot/bzImage" \
+     -initrd "$LDD_ROOT/initramfs.cpio.gz" \
      -append 'console=ttyS0' \
      -nographic
 ```
@@ -163,5 +182,5 @@ Press `<C-A> x` to terminate QEMU.
 # ¶ The end
 
 [Linux kernel documentation]: https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux-stable.git/tree/Documentation/filesystems/ramfs-rootfs-initramfs.txt?h=v4.9.30
-[busybox's official web page]: https://www.busybox.net/downloads/binaries
-[BusyBox's FAQ]: (https://www.busybox.net/FAQ.html#job_control)
+[BusyBox's binary downloads]: https://busybox.net/downloads/binaries/1.35.0-x86_64-linux-musl/
+[BusyBox's FAQ]: https://busybox.net/FAQ.html#job_control
