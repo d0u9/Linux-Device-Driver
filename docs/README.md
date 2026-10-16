@@ -4,6 +4,8 @@ Read the chapters in numerical order. Driver source code is in
 [`examples/`](../examples/); workspace helper scripts are in
 [`tools/`](../tools/README.md).
 
+For documentation maintenance, see the [writing conventions](WRITING.md).
+
 ## 00. Workspace setup
 
 - [Directory layout and tool installation](00_preface/00_dir_tree.md)
