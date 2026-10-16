@@ -31,7 +31,8 @@ tree -L 1 -d $LDD_ROOT
 ├── initramfs               # Directory containing files to build initramfs image.
 ├── nfs_dir                 # Directory which is shared between host and QEMU via NFS protocol.
 │   └── Linux-Device-Driver # This is our example repo.
-└── qemu                    # The QEMU source files, git cloned from official repo
+└── src                     # Sources for locally built tools.
+    └── qemu                # QEMU sources and the build/ directory.
 ```
 
 # Some setups

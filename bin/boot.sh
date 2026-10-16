@@ -3,9 +3,9 @@
 KERNEL="5.16.19"
 MACHINE="x86_64"
 SCRIPTDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &> /dev/null && pwd)"
-export LDD_ROOT="$(cd "${SCRIPTDIR}"/.. && pwd)"
+export LDD_ROOT="${LDD_ROOT:-$(cd "${SCRIPTDIR}"/.. && pwd)}"
 
-QEMUPATH="${LDD_ROOT}/qemu/build/qemu-system-${MACHINE}"
+QEMUPATH="${LDD_ROOT}/src/qemu/build/qemu-system-${MACHINE}"
 if [ -e "${QEMUPATH}" ]; then
   if [ ! -e "${LDD_ROOT}/bin/qemu" ]; then
     echo "Soft linking qemu to qemu-system-${MACHINE}"
@@ -45,7 +45,6 @@ ${LDD_ROOT}/bin/qemu \
     -nographic \
     -net nic,model=e1000 \
     -net user,hostfwd=tcp::7023-:23 \
-    -vnc none \
     -m 512M \
     -device isa-kmod-edu,chardev=pr1 \
     -chardev file,id=pr1,path=/tmp/isa_edu \

@@ -36,88 +36,73 @@ patched is crucial to function all pieces of samples in this repo.
 
 ## Download and patch QEMU
 
-Install ninja-build with dnf or apt.
+Install the build dependencies on Fedora:
 
 ```
-sudo dnf -y install ninja-build
-```
-
-QEMU will also require the following packages installed:
-
-```
-sudo dnf -y install libcap-ng-devel libattr-devel
+sudo dnf install gcc gcc-c++ binutils make git patch gdb wget \
+    python3 pkgconf-pkg-config ninja-build glib2-devel libslirp-devel \
+    libcap-ng-devel libattr-devel
 ```
 
 Download QEMU source from official git:
 
-Note: For now, QEMU 5.2.0 is used throughout this repo.
+These instructions target QEMU 11.1.2. The custom device patch still needs
+to be ported and the corresponding driver examples verified against this version.
 
 ```
-git clone https://git.qemu.org/git/qemu.git
+mkdir -p "$LDD_ROOT/src"
+cd "$LDD_ROOT/src"
+git clone --depth 1 --branch v11.1.2 https://gitlab.com/qemu-project/qemu.git qemu
 cd qemu
-# The following line is an older version of QEMU. QEMU_LDD.patch has been updated for 7.0.50.
-# git checkout v5.2.0
-git submodule init
-git submodule update --recursive
+git submodule update --init --recursive
 ```
 
-Apply QEMU patch for adding new hardware devices:
+The driver examples require a patch that adds custom emulated devices.
 
-{TODO}: Correct this url.
-```
-wget https://raw.githubusercontent.com/d0u9/Linux-Device-Driver/draft/02_getting_start_with_driver_development/QEMU_LDD.patch
-git am QEMU_LDD.patch
-```
+> TODO: Port QEMU_LDD.patch to QEMU 11.1.2 and update the patch location
+> and application instructions. Verify that isa-kmod-edu, pci-kmod-edu,
+> and usb-kmod-edu are registered and that the corresponding driver examples work.
+
+Until this is complete, an unpatched build can boot a guest but cannot run
+the examples that require these custom devices or the current boot.sh command.
 
 ## Build QEMU
 
-Install necessary packages which are essential to building QEMU:
+Set the build variables. The prefix is only used if you later run `make install`;
+the steps below run QEMU directly from the build directory.
 
 ```
-# For ubuntu 18.04
-sudo apt-get install ninja-build libglib2.0-dev libcap-ng-dev libcairo2-dev python3-sphinx
-```
-
-Setup necessary ENVs for building.
-
-```
-export INSTALL_DIR=/path/to/be/installed/to
-export CONFIG_DIR=$INSTALL_DIR/etc
-export TARGET_LIST="i386-softmmu,x86_64-softmmu"
+INSTALL_DIR="$LDD_ROOT/tools/qemu"
+TARGET_LIST="i386-softmmu,x86_64-softmmu"
 ```
 
 Then, configure and build
 
 ```
-mkdir build
+cd "$LDD_ROOT/src/qemu"
+mkdir -p build
 cd build
 ../configure \
-    --prefix=$INSTALL_DIR \
-    --sysconfdir=$CONFIG_DIR \
-    --target-list=$TARGET_LIST \
+    --prefix="$INSTALL_DIR" \
+    --target-list="$TARGET_LIST" \
     --enable-virtfs \
+    --enable-slirp \
+    --disable-docs \
     --enable-debug \
     --extra-cflags="-g3" \
     --extra-ldflags="-g3" \
-    --disable-strip \
-    ;
-make -j
-# only do this line if you actually want to install QEMU otherwise note the instructions about setting up in $LDD_ROOT/bin
-make install
-```
-
-Add `$INSTALL_DIR` in your `$PATH` environment variable.
-
-```
-export PATH="$PATH:$INSTALL_DIR"
+    --disable-strip
+make -j"$(nproc)"
 ```
 
 Installation is unnecessary; users can directly use the binary from the build
-directory:
+directory through a symbolic link in `$LDD_ROOT/bin`:
 
 ```
-cd $LDD_ROOT/bin
-ln -s ../qemu/build/qemu-system-x86_64 qemu
+mkdir -p "$LDD_ROOT/bin"
+cd "$LDD_ROOT/bin"
+ln -s ../src/qemu/build/qemu-system-x86_64 qemu
+export PATH="$LDD_ROOT/bin:$PATH"
 ```
 
 ## Test
