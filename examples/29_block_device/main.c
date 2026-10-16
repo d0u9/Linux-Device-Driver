@@ -3,7 +3,7 @@
 #include <linux/cdev.h>
 #include <linux/init.h>
 #include <linux/slab.h>
-#include <linux/genhd.h>
+#include <linux/blkdev.h>
 #include <linux/vmalloc.h>
 #include <linux/blk-mq.h>
 
@@ -26,22 +26,39 @@ static int request_mode = RM_SIMPLE;
 module_param(request_mode, int, 0);
 
 static
-int block_open(struct block_device *bdev, fmode_t mode)
+int block_revalidate(struct gendisk *gdisk)
 {
-	struct ldd_dev *ldd_dev = bdev->bd_disk->private_data;
+	struct ldd_dev *ldd_dev = gdisk->private_data;
 
-	timer_delete_sync(&ldd_dev->timer);
-	spin_lock(&ldd_dev->lock);
-	if (!ldd_dev->users)
-		check_disk_change(bdev);
-	ldd_dev->users++;
-	spin_unlock(&ldd_dev->lock);
+	if (ldd_dev->media_change) {
+		ldd_dev->media_change = false;
+		memset(ldd_dev->data, 0, ldd_dev->size);
+	}
 
 	return 0;
 }
 
 static
-void block_release(struct gendisk *gdisk, fmode_t mode)
+int block_open(struct gendisk *gdisk, blk_mode_t mode)
+{
+	struct ldd_dev *ldd_dev = gdisk->private_data;
+	bool first;
+
+	timer_delete_sync(&ldd_dev->timer);
+	spin_lock(&ldd_dev->lock);
+	first = !ldd_dev->users;
+	ldd_dev->users++;
+	spin_unlock(&ldd_dev->lock);
+
+	/* disk_check_media_change() may sleep, so call it outside the spinlock. */
+	if (first && disk_check_media_change(gdisk))
+		block_revalidate(gdisk);
+
+	return 0;
+}
+
+static
+void block_release(struct gendisk *gdisk)
 {
 	struct ldd_dev *ldd_dev = gdisk->private_data;
 
@@ -56,32 +73,18 @@ void block_release(struct gendisk *gdisk, fmode_t mode)
 }
 
 static
-int block_media_changed(struct gendisk *gdisk)
-{
-	struct ldd_dev *ldd_dev = gdisk->private_data;
-	
-	return (ldd_dev->media_change) ? 1 : 0;
-}
-
-static
-int block_revalidate(struct gendisk *gdisk)
+unsigned int block_check_events(struct gendisk *gdisk, unsigned int clearing)
 {
 	struct ldd_dev *ldd_dev = gdisk->private_data;
 
-	if (ldd_dev->media_change) {
-		ldd_dev->media_change = false;
-		memset(ldd_dev->data, 0, ldd_dev->size);
-	}
-
-	return 0;
+	return ldd_dev->media_change ? DISK_EVENT_MEDIA_CHANGE : 0;
 }
 
-static struct block_device_operations block_ops = {
+static const struct block_device_operations block_ops = {
 	.owner           = THIS_MODULE,
 	.open 	         = block_open,
 	.release 	 = block_release,
-	.media_changed   = block_media_changed,
-	.revalidate_disk = block_revalidate,
+	.check_events    = block_check_events,
 	// .ioctl	         = sbull_ioctl
 };
 
@@ -108,7 +111,7 @@ blk_status_t ldd_block_request_simple(struct blk_mq_hw_ctx *hctx,
 			       const struct blk_mq_queue_data *qd)
 {
 	struct request *req = qd->rq;
-	struct ldd_dev *dev = req->rq_disk->private_data;
+	struct ldd_dev *dev = req->q->queuedata;
 	struct bio_vec bvec;
 	struct req_iterator iter;
 	sector_t pos_sector = blk_rq_pos(req);
@@ -153,10 +156,10 @@ int block_xfer_bio(struct ldd_dev *ldd_dev, struct bio *bio)
 
 	bio_for_each_segment(bvec, bio, iter) {
 		buffer = kmap_atomic(bvec.bv_page) + bvec.bv_offset;
-		transfer(ldd_dev, sector, (bio_cur_bytes(bio) >> SECTOR_SHIFT),
+		transfer(ldd_dev, sector, (bvec.bv_len >> SECTOR_SHIFT),
 			 buffer, bio_data_dir(bio));
 
-		sector += (bio_cur_bytes(bio) >> SECTOR_SHIFT);
+		sector += (bvec.bv_len >> SECTOR_SHIFT);
 
 		kunmap_atomic(buffer);
 	}
@@ -207,7 +210,7 @@ static struct blk_mq_ops mq_ops_full = {
 	.queue_rq = ldd_block_request_full,
 };
 
-void timeout_cb(struct timer_list *timer)
+static void timeout_cb(struct timer_list *timer)
 {
 	struct ldd_dev *ldd_dev = timer_container_of(ldd_dev, timer, timer);
 
@@ -217,23 +220,52 @@ void timeout_cb(struct timer_list *timer)
 }
 
 static
-blk_qc_t mk_request(struct request_queue *q, struct bio *bio)
+void block_submit_bio(struct bio *bio)
 {
 	int status;
-	struct ldd_dev *ldd_dev = q->queuedata;
+	struct ldd_dev *ldd_dev = bio->bi_bdev->bd_disk->private_data;
 
 	status = block_xfer_bio(ldd_dev, bio);
 	bio->bi_status = status;
 	bio_endio(bio);
-
-	return BLK_QC_T_NONE;
 }
 
+/* A bio-based disk handles I/O in ->submit_bio instead of a request queue. */
+static const struct block_device_operations block_ops_bio = {
+	.owner           = THIS_MODULE,
+	.open 	         = block_open,
+	.release 	 = block_release,
+	.check_events    = block_check_events,
+	.submit_bio      = block_submit_bio,
+};
+
+static
+struct gendisk *alloc_mq_disk(struct ldd_dev *ldd_dev,
+			      const struct blk_mq_ops *ops,
+			      struct queue_limits *lim)
+{
+	struct gendisk *gd;
+	int rv;
+
+	rv = blk_mq_alloc_sq_tag_set(&ldd_dev->tag_set, ops, 256, 0);
+	if (rv)
+		return ERR_PTR(rv);
+
+	gd = blk_mq_alloc_disk(&ldd_dev->tag_set, lim, ldd_dev);
+	if (IS_ERR(gd))
+		blk_mq_free_tag_set(&ldd_dev->tag_set);
+
+	return gd;
+}
 
 static
 int setup_device(struct ldd_dev *ldd_dev)
 {
 	int rv = 0;
+	struct gendisk *gd;
+	struct queue_limits lim = {
+		.logical_block_size = hardsect_size,
+	};
 
 	ldd_dev->size = nsectors * hardsect_size;	
 	ldd_dev->users = 0;
@@ -249,55 +281,42 @@ int setup_device(struct ldd_dev *ldd_dev)
 	pr_err("REQUEST_MODE = %d\n", request_mode);
 	switch (request_mode) {
 	case RM_NOQUEUE:
-		ldd_dev->queue = blk_alloc_queue(mk_request, NUMA_NO_NODE);
-		if (!ldd_dev->queue) {
-			rv = -ENOMEM;
-			goto out_vfree;
-		}
-
+		gd = blk_alloc_disk(&lim, NUMA_NO_NODE);
 		break;
 	case RM_FULL:
-		ldd_dev->queue = blk_mq_init_sq_queue(&ldd_dev->tag_set,
-						      &mq_ops_full, 256,
-						      BLK_MQ_F_SHOULD_MERGE);
-		if (!ldd_dev->queue) {
-			rv = -ENOMEM;
-			goto out_vfree;
-		}
+		gd = alloc_mq_disk(ldd_dev, &mq_ops_full, &lim);
 		break;
 	default:
 		pr_notice("fallbackk to simple!\n");
+		fallthrough;
 	case RM_SIMPLE:
-		ldd_dev->queue = blk_mq_init_sq_queue(&ldd_dev->tag_set,
-						      &mq_ops_simple, 256,
-						      BLK_MQ_F_SHOULD_MERGE);
-		if (!ldd_dev->queue) {
-			rv = -ENOMEM;
-			goto out_vfree;
-		}
+		gd = alloc_mq_disk(ldd_dev, &mq_ops_simple, &lim);
 		break;
 	}
-
-	blk_queue_logical_block_size(ldd_dev->queue, hardsect_size);
-	ldd_dev->queue->queuedata = ldd_dev;
-
-	ldd_dev->gd = alloc_disk(16);
-	if (!ldd_dev->gd) {
+	if (IS_ERR(gd)) {
 		pr_err("Alloc disk failure\n");
-		rv = -ENOMEM;
+		rv = PTR_ERR(gd);
 		goto out_vfree;
 	}
 
-	ldd_dev->gd->major = ldd_dev->major;
-	ldd_dev->gd->first_minor = 0;
-	ldd_dev->gd->fops = &block_ops;
-	ldd_dev->gd->queue = ldd_dev->queue;
-	ldd_dev->gd->private_data = ldd_dev;
-	snprintf(ldd_dev->gd->disk_name, DISK_NAME_LEN, "memdisk");
-	set_capacity(ldd_dev->gd, nsectors * (hardsect_size / SECTOR_SIZE));
+	gd->major = ldd_dev->major;
+	gd->first_minor = 0;
+	gd->minors = 16;
+	gd->fops = (request_mode == RM_NOQUEUE) ? &block_ops_bio : &block_ops;
+	gd->events = DISK_EVENT_MEDIA_CHANGE;
+	gd->private_data = ldd_dev;
+	snprintf(gd->disk_name, DISK_NAME_LEN, "memdisk");
+	set_capacity(gd, nsectors * (hardsect_size / SECTOR_SIZE));
 
 	// Activate this block device
-	add_disk(ldd_dev->gd);
+	rv = add_disk(gd);
+	if (rv) {
+		put_disk(gd);
+		if (request_mode != RM_NOQUEUE)
+			blk_mq_free_tag_set(&ldd_dev->tag_set);
+		goto out_vfree;
+	}
+	ldd_dev->gd = gd;
 
 	return 0;
 
