@@ -199,7 +199,7 @@ int jiq_read_tasklet(struct seq_file *m, void *v)
 static
 int proc_open(struct inode *inode, struct file *filp)
 {
-	int (*show)(struct seq_file *m, void *v) = PDE_DATA(inode);
+	int (*show)(struct seq_file *m, void *v) = pde_data(inode);
 	return single_open(filp, show, NULL);
 }
 

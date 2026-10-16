@@ -55,7 +55,7 @@ Execute `cat /proc/proc_demo/proc_fs_mul` in the command line, you will get
 ## Note
 
 `proc_create_data()` accepts a data pointer which can be passed to `open()`
-method. In `open()` method, `PDE_DATA(inode)` helps retrieving pointer to data
+method. In `open()` method, `pde_data(inode)` helps retrieving pointer to data
 from inode structure.
 
 Also, `simple_open()` method's third argument acts as a data pointer as well.

@@ -26,7 +26,7 @@ static struct opt *opts[PROC_FILE_NR] = { NULL };
 static
 int proc_open(struct inode *inode, struct file *filp)
 {
-	struct opt *opt = PDE_DATA(inode);
+	struct opt *opt = pde_data(inode);
 	return single_open(filp, opt->show, opt->args);
 }
 
