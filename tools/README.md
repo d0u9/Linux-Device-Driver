@@ -66,6 +66,20 @@ directory. See the patch status below before using the custom devices.
 devices. Porting it to QEMU 11.1.2 is still pending; `boot.sh` requires those
 devices and cannot run with an unpatched QEMU build.
 
+## Build all examples
+
+Run from the tutorial checkout on a Linux host to build every example module
+and userspace test against one configured, prepared kernel tree:
+
+```bash
+./tools/check_builds.sh /path/to/linux    # default: $LDD_ROOT/src/linux-stable
+./tools/check_builds.sh /path/to/linux 07_ioctl 22_lddbus
+```
+
+Examples are built in a temporary copy, so the checkout stays clean. The script
+prints `PASS`/`FAIL` per directory, the build log for each failure, and exits
+non-zero if any build fails. The kernel tree path must not contain spaces.
+
 ## Check the scripts
 
 Run from the tutorial checkout:
@@ -75,7 +89,8 @@ python3 tools/tests/test_install.py
 python3 tools/tests/test_boot.py
 python3 tools/tests/test_qemu_shim.py
 python3 tools/tests/test_activate.py
-bash -n tools/install.sh tools/activate tools/bin/qemu tools/bin/boot.sh tools/bin/rebuild_initramfs.sh
+python3 tools/tests/test_check_builds.py
+bash -n tools/install.sh tools/activate tools/bin/qemu tools/bin/boot.sh tools/bin/rebuild_initramfs.sh tools/check_builds.sh
 ```
 
 The tests use temporary workspaces and mock executables. Bash is required;
