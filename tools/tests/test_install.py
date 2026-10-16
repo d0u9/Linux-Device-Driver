@@ -26,8 +26,8 @@ class InstallerTest(unittest.TestCase):
                                  (TOOLS / "bin/qemu").read_bytes())
                 self.assertTrue(os.access(runtime / "bin/qemu", os.X_OK))
                 self.assertEqual(sorted(p.name for p in runtime.iterdir()),
-                                 ["activate", "bin", "initramfs", "kernels", "nfs_dir", "src"])
-                for name in ("bin", "src", "kernels", "initramfs", "nfs_dir"):
+                                 ["activate", "bin", "initramfs", "kernels", "shared", "src"])
+                for name in ("bin", "src", "kernels", "initramfs", "shared"):
                     self.assertTrue((runtime / name).is_dir())
                 self.assertEqual(existing_file.read_text(), "existing guest file")
                 self.assertEqual(list((runtime / "src").iterdir()), [])

@@ -46,4 +46,4 @@ kernel/
 kernels/
 initramfs/
 initramfs.cpio.gz
-nfs_dir/
+shared/

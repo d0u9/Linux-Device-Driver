@@ -14,7 +14,7 @@ if [ "$RUNTIME_DIR" = "$TOOLS_DIR" ] || [ "$RUNTIME_DIR" = "$(dirname -- "$TOOLS
     exit 2
 fi
 
-mkdir -p -- "$RUNTIME_DIR"/{bin,src,kernels,initramfs,nfs_dir}
+mkdir -p -- "$RUNTIME_DIR"/{bin,src,kernels,initramfs,shared}
 install -m 644 "$TOOLS_DIR/activate" "$RUNTIME_DIR/activate"
 install -m 755 "$TOOLS_DIR/bin/qemu" "$RUNTIME_DIR/bin/qemu"
 

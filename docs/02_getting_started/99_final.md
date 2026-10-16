@@ -7,7 +7,7 @@ Linux Driver. During the chapters before, a few works have stepped including:
 - Configure and build Linux kernel image, on which all examples will run.
 - Set up an initramfs image to help booting system up and give some basic
   configurations to system.
-- Mount NFS filesystem in QEMU guest for fast sharing files between host and guest.
+- Mount a shared host directory in the guest using 9p over virtio.
 - Set up telnet service to allow users create multiple shell environment.
 
 As a summary, we paste the complete configurations of QEMU command and initramfs'
@@ -33,8 +33,8 @@ ip link set lo up
 # Wait for NIC ready
 sleep 0.5
 
-# Mount NFS
-mount -t nfs -o nolock host_machine:/home/doug/LDD_ROOT /mnt
+# Mount the shared directory
+mount -t 9p -o trans=virtio,version=9p2000.L,cache=none ldd /mnt
 
 # Start telnet service
 telnetd -l /bin/sh
@@ -65,6 +65,7 @@ to prevent typing it each time.
    -initrd $LDD_ROOT/initramfs.cpio.gz \
    -append 'console=ttyS0' \
    -nographic \
+   -virtfs local,path="$LDD_ROOT/shared",mount_tag=ldd,security_model=mapped-xattr \
    -device isa-kmod-edu,chardev=pr1 \
    -chardev file,id=pr1,path=/tmp/isa_edu \
    -device pci-kmod-edu \

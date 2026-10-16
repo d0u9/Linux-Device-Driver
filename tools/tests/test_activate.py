@@ -24,7 +24,7 @@ class ActivationTest(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="ldd activation ") as tmp:
             workspace = Path(tmp) / "workspace"
             (workspace / "bin").mkdir(parents=True)
-            (workspace / "nfs_dir/tutorial").mkdir(parents=True)
+            (workspace / "shared/tutorial").mkdir(parents=True)
             sibling = Path(tmp) / "workspace-other"
             sibling.mkdir()
             shutil.copy2(ACTIVATE, workspace / "activate")
@@ -69,7 +69,7 @@ refresh
 snapshot
 command -v qemu
 source "$1/activate"
-cd nfs_dir/tutorial
+cd shared/tutorial
 refresh
 snapshot
 cd "$2"

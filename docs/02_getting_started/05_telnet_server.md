@@ -32,7 +32,7 @@ mknod -m 666 dev/ptmx c 5 2
 ```
 
 Automatically mount the `devpts` device during the boot time by appending the
-line below to the `init` script after the nfs mount line.
+line below to the `init` script after the shared-directory mount line.
 
 
 ```bash

@@ -116,7 +116,7 @@ source /path/to/your/ldd_root/activate
 Open a new shell after this one-time setup. Entering the workspace or any of
 its subdirectories sets `LDD_ROOT` and prepends `$LDD_ROOT/bin` to `PATH`.
 Thus `qemu` runs the installed shim, including when working in the tutorial
-checkout under `nfs_dir`. Leaving the workspace restores the saved `PATH`
+checkout under `shared`. Leaving the workspace restores the saved `PATH`
 and `LDD_ROOT`; re-entering activates it again. No per-visit `source` command
 is needed. The tutorial checkout does not determine the activation boundary.
 

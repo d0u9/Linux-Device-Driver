@@ -30,7 +30,7 @@ LDD_ROOT/
 ├── src/
 ├── kernels/
 ├── initramfs/
-└── nfs_dir/
+└── shared/
 ```
 
 Existing directory contents are preserved. Rerunning the installer updates the

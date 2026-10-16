@@ -30,7 +30,7 @@ tree -L 1 -d $LDD_ROOT
 ├── kernels                 # The dir containing Linux kernel sources.
 │   └── linux-5.10.4
 ├── initramfs               # Directory containing files to build initramfs image.
-├── nfs_dir                 # Directory which is shared between host and QEMU via NFS protocol.
+├── shared                 # Directory shared with the guest through 9p over virtio.
 │   └── Linux-Device-Driver # This is our example repo.
 └── src                     # Sources for locally built tools.
     └── qemu                # QEMU sources and the build/ directory.
@@ -39,13 +39,13 @@ tree -L 1 -d $LDD_ROOT
 # Make necessary directories
 
 ```
-mkdir -p "$LDD_ROOT"/{bin,nfs_dir,src}
+mkdir -p "$LDD_ROOT"/{bin,shared,src}
 ```
 
 # Clone this repo
 
 ```
-cd $LDD_ROOT/nfs_dir
+cd $LDD_ROOT/shared
 git clone https://github.com/d0u9/Linux-Device-Driver.git
 ```
 
@@ -56,13 +56,13 @@ runtime directory; do not use the tutorial checkout as `LDD_ROOT`.
 After cloning, install the scripts into the workspace:
 
 ```bash
-cd "$LDD_ROOT/nfs_dir/Linux-Device-Driver"
+cd "$LDD_ROOT/shared/Linux-Device-Driver"
 ./tools/install.sh "$LDD_ROOT"
 ```
 
 See [workspace tools](../../tools/README.md) for the script inventory and checks.
 The installer currently installs only the qemu shim and activation hook;
-it also creates bin, src, kernels, initramfs, and nfs_dir if missing, preserving
+it also creates bin, src, kernels, initramfs, and shared if missing, preserving
 their contents. Source trees and build outputs are added in later chapters.
 boot.sh and rebuild_initramfs.sh are not installed by this command.
 Repeat these commands after updating the scripts in the tutorial repository.

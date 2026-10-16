@@ -22,7 +22,7 @@ Read the chapters in numerical order. Driver source code is in
 - [Development with QEMU](02_getting_started/01_development_with_qemu.md)
 - [Building the kernel](02_getting_started/02_compile_Linux_Kernel.md)
 - [Building an initramfs](02_getting_started/03_build_initramfs.md)
-- [NFS support](02_getting_started/04_nfs_support.md)
+- [Shared directory](02_getting_started/04_shared_directory.md)
 - [Telnet server](02_getting_started/05_telnet_server.md)
 - [Hello world module](02_getting_started/06_hello_world_module.md)
 - [Compiling modules](02_getting_started/07_compiling.md)

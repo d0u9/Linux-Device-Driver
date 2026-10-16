@@ -173,7 +173,7 @@ sake of time. The virtual machine solves this problem by writing a simple
 virtual hardware that implements the basic circuit interfaces as design.
 
 Now, back to the QEMU virtual machine we have set up before, log in to the
-guest's terminal, and change the working directory to the `nfs` filesystem
+guest's terminal, and change the working directory to the 9p filesystem
 mounted for sharing files between host and guest. Execute the commands below:
 
 1. On the host, recompile the module against the stable kernel:
@@ -188,7 +188,7 @@ make -C ~/LDD_ROOT/kernels/linux-stable M=$(pwd) modules
 # This is an auxiliary shell script created before.
 qemu_run.sh
 
-# Change to the NFS sharing directory. It is mounted at /mnt directory.
+# Change to the shared directory. It is mounted at /mnt directory.
 cd /mnt
 
 # Change to our example directory

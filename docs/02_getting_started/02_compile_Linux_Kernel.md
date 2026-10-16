@@ -49,12 +49,18 @@ scripts/config \
     --disable E100 \
     --enable E1000 \
     --disable E1000E \
-    --disable RUST
+    --disable RUST \
+    --enable VIRTIO_PCI \
+    --enable NET_9P \
+    --enable NET_9P_VIRTIO \
+    --enable 9P_FS
 
 make olddefconfig
 ```
 
 `make olddefconfig` resolves Kconfig dependencies after the edits.
+The virtio PCI transport and 9p filesystem are built in for the later
+shared-directory setup, so they do not require modules in the initramfs.
 
 The commands above adjust the listed options, not every Ethernet driver.
 Use `make menuconfig` for the remaining drivers or to review the configuration:
