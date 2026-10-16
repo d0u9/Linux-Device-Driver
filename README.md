@@ -19,6 +19,18 @@ export KERNELDIR=/path/to/kernel/source/
 This environment variable is mainly used in Makefile to determine which kernel
 source tree the drivers are built against.
 
+# Examples
+
+Driver examples are in [`examples/`](examples/). Numbered directories preserve
+the learning sequence; [`rbtree`](examples/rbtree/) is a supplemental example.
+
+To build an example after setting `KERNELDIR`, enter its directory:
+
+```bash
+cd examples/01_hello_world
+make
+```
+
 # Introduction
 
 This repo demonstrates basic examples of Linux Device Driver(LDD) for

@@ -192,7 +192,7 @@ qemu_run.sh
 cd /mnt
 
 # Change to our example directory
-cd /mnt/Linux-Device-Driver/eg_01_hello_world
+cd /mnt/Linux-Device-Driver/examples/01_hello_world
 
 # Insert module
 insmod hello_world.ko
