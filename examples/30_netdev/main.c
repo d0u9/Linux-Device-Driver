@@ -25,7 +25,7 @@ module_param(use_napi, int, 0);
 
 static struct net_device *net_devs[2];
 
-void ldd_dev_rx(struct net_device *dev, struct ldd_packet *pkt)
+static void ldd_dev_rx(struct net_device *dev, struct ldd_packet *pkt)
 {
 	struct sk_buff *skb;
 	struct ldd_dev *ldd_dev = netdev_priv(dev);
@@ -60,7 +60,7 @@ void ldd_dev_rx(struct net_device *dev, struct ldd_packet *pkt)
 	return;
 }
 
-void ldd_release_buffer(struct ldd_packet *pkt)
+static void ldd_release_buffer(struct ldd_packet *pkt)
 {
 	unsigned long flags;
 	struct ldd_dev *ldd_dev = netdev_priv(pkt->dev);
@@ -199,7 +199,6 @@ static
 void ldd_napi_interrupt(int irq, void *dev_id, struct pt_regs *regs)
 {
 	int statusword;
-	unsigned long flags;
 	struct ldd_dev *ldd_dev;
 
 	/*
@@ -249,12 +248,14 @@ int ldd_netdev_open(struct net_device *dev)
 	/* request_region(), request_irq(), ....  (like fops->open) */
 
 	struct ldd_dev *ldd_dev = netdev_priv(dev);
+	u8 addr[ETH_ALEN];
 
 	pr_debug("========= open %s ====== \n", dev->name);
 
-	memcpy(dev->dev_addr, "\0SNUL0", ETH_ALEN);
+	memcpy(addr, "\0SNUL0", ETH_ALEN);
 	if (dev == net_devs[1])
-		dev->dev_addr[ETH_ALEN-1]++; /* \0SNUL1 */
+		addr[ETH_ALEN-1]++; /* \0SNUL1 */
+	eth_hw_addr_set(dev, addr);
 
 	pr_debug("======== enable napi = %px, napi = %px \n",
 		 dev, &ldd_dev->napi);
@@ -414,7 +415,7 @@ struct net_device_stats *ldd_netdev_stats(struct net_device *dev)
 	return &ldd_dev->stats;
 }
 
-int ldd_netdev_header(struct sk_buff *skb, struct net_device *dev,
+static int ldd_netdev_header(struct sk_buff *skb, struct net_device *dev,
                 unsigned short type, const void *daddr, const void *saddr,
                 unsigned len)
 {
@@ -500,7 +501,7 @@ void ldd_dev_init(struct net_device *dev)
 	spin_lock_init(&ldd_dev->lock);
 	ldd_dev->rx_int_enabled = false;
 	if (use_napi) {
-		netif_napi_add(dev, &ldd_dev->napi, ldd_dev_poll, 2);
+		netif_napi_add_weight(dev, &ldd_dev->napi, ldd_dev_poll, 2);
 	}
 
 }
