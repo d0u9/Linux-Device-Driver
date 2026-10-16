@@ -16,7 +16,7 @@ EXPORT_SYMBOL(ldd_class);
 /*
  * BUS type
  */
-static int ldd_uevent(struct device *dev, struct kobj_uevent_env *env)
+static int ldd_uevent(const struct device *dev, struct kobj_uevent_env *env)
 {
 	if (add_uevent_var(env, "LDDBUS_VERSION=%s", Version))
 		return -ENOMEM;
@@ -24,7 +24,7 @@ static int ldd_uevent(struct device *dev, struct kobj_uevent_env *env)
 	return 0;
 }
 
-static ssize_t bus_version_show(struct bus_type *bus, char *buf)
+static ssize_t bus_version_show(const struct bus_type *bus, char *buf)
 {
 	return snprintf(buf, PAGE_SIZE, "%s\n", Version);
 }
@@ -42,7 +42,7 @@ struct device ldd_bus = {
 /*
  * BUS Device
  */
-static int ldd_match(struct device *dev, struct device_driver *driver)
+static int ldd_match(struct device *dev, const struct device_driver *driver)
 {
 	return !strncmp(dev_name(dev), driver->name, strlen(driver->name));
 }
@@ -133,7 +133,7 @@ int __init m_init(void)
 		return ret;
 	}
 
-	ldd_class = class_create(THIS_MODULE, "ldd");
+	ldd_class = class_create("ldd");
 	if (!ldd_class) {
 		pr_err("Unable to create ldd class\n");
 		goto fail1;
