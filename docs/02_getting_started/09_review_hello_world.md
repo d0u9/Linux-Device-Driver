@@ -12,18 +12,18 @@ the resources it acquires, such as allocated memory and hardware resources;
 the exit function is responsible for cleanup when the module is unloaded.
 
 Another macro that has been mentioned before is `MODULE_LICENSE()`. It is used
-to tell the kernel what the license this module opts for use. Using functions
-exported as GPL by the kernel is prohibited in a module that declares to use a
+to tell the kernel which license the module declares. Using symbols exported
+with `EXPORT_SYMBOL_GPL()` is prohibited in a module that declares a
 "Proprietary" license.
 
 `MODULE_AUTHOR()` declares the author of this module, and `MODULE_DESCRIPTION()`
 describes what the module does. Information declared in these two macros is
-embedded in the final `.ko` binary file as in a separate ELF section and can be
+embedded in the final `.ko` binary file in the `.modinfo` ELF section and can be
 inspected via the `modinfo` command in userspace.
 
 The header file, `linux/module.h`, contains functions and macros essential to
-kernel module programming. Every kernel module requires this header file with no
-exception. In addition, this header file includes other necessary header files
+kernel module programming. This C example includes it for the module macros.
+In addition, this header file includes other necessary header files
 recursively, which are used during the compiling, loading and running time.
 
 Another noticeable point is using the `__init` and the `__exit` markers. These
@@ -34,6 +34,6 @@ initialization. Similarly, `__exit` marked functions are only used at the end
 of the module's lifetime. In our example, function `m_init()` is used only once
 during the loading period of the module, and then it fulfilled its mission and
 can be removed from memory. The other two marks, `__initdata` and `__exitdata`,
-decorate the variables the same way as `__init` and `__exit` to functions.
+annotate variables in the same way as `__init` and `__exit` annotate functions.
 
 # ¶ The end
