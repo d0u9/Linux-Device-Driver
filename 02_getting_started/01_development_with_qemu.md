@@ -42,7 +42,7 @@ Install ninja-build with dnf or apt.
 sudo dnf -y install ninja-build
 ```
 
-Qemu will also require the following packages installed:
+QEMU will also require the following packages installed:
 
 ```
 sudo dnf -y install libcap-ng-devel libattr-devel
@@ -50,7 +50,7 @@ sudo dnf -y install libcap-ng-devel libattr-devel
 
 Download QEMU source from official git:
 
-Note: For now, QEMU 5.2.0 is used through out this repo.
+Note: For now, QEMU 5.2.0 is used throughout this repo.
 
 ```
 git clone https://git.qemu.org/git/qemu.git
@@ -61,7 +61,7 @@ git submodule init
 git submodule update --recursive
 ```
 
-Apply QEMU patch for adding new hardwares:
+Apply QEMU patch for adding new hardware devices:
 
 {TODO}: Correct this url.
 ```

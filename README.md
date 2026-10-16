@@ -36,7 +36,7 @@ make
 This repo demonstrates basic examples of Linux Device Driver(LDD) for
 the purpose of studying and sharing.
 
-Some of the examples in this repo are excepted from the book of 
+Some of the examples in this repo are excerpted from the book of
 LDD3(Linux Device Drivers, Third Edition), and the other examples are written
 by myself in necessary to illustrate some important data structures or details.
 

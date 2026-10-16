@@ -6,7 +6,7 @@ According to the official page of the Linux kernel:
 > Linus Torvalds with assistance from a loosely-knit team of hackers across
 > the Net. It aims towards POSIX and Single UNIX Specification compliance.
 
-Linux is great. It was created by Linus Torvalds in 1991 and then was then enriched by
+Linux is great. It was created by Linus Torvalds in 1991 and was then enriched by
 people from all around the world. It is free (free speech, not free beer) and
 open source, which means anyone can download and play it under the GPL V2
 license. Linux is a UNIX-like operating system; it provides a standard 
@@ -24,7 +24,7 @@ hardware. It is still in the actively developing phase. More and more companies
 are involved, including Intel, Google, Microsoft, Huawei, etc.
 
 Generally speaking, the word "Linux" stands for various distributions of the
-Linux operating system, e.g., Ubuntu, Debian, and Redhat. But more specifically,
+Linux operating system, e.g., Ubuntu, Debian, and Red Hat. But more specifically,
 Linux only means the kernel. A Linux distribution contains a collection of
 software built upon the Linux kernel and is usually shipped with a package 
 management system for managing software installation and updating. Users can
@@ -58,7 +58,7 @@ processes in a system run concurrently; they request resources from the system
 directly and be scheduled by the kernel. Each process has its system resource,
 e.g. network connectivity, memory, CPU time. These resources, from a process's 
 view, are monopolistic. However, the feeling of monopoly is just an illusion,
-since the actual underlaying resources are a few. The Linux kernel is
+since the actual underlying resources are a few. The Linux kernel is
 responsible for splitting and scheduling different real hardware resources to a
 set of processes.
 
@@ -90,9 +90,8 @@ other.
 
 Other than the CPU time, one of the most precious resources in a computer is
 memory. Memory stands at the critical cross of a program's execution and makes
-it one of the most complex parts of the Linux kernel. It provides a set of
-function APIs for other parts to interact with it; request and free single or
-chuck of memory ranges for exclusive or shared use. Due to its essential role
+it one of the most complex parts of the Linux kernel. It provides APIs for
+other kernel subsystems to allocate and free memory. Due to its essential role
 in the kernel, any policy dealing with it is crucial to the system's
 performance. Not only the software but also the hardware is evolving in 
 boosting memory performance. Today, the most widely used technology in memory
@@ -159,7 +158,7 @@ The new versioning scheme, according to Linus' note, upgrades major number each
 time when running out its fingers and toes to count.
 
 The new scheme takes the first two numbers as a whole to indicate the major
-version. In each circle, a new merge window is opened for accepting patches
+version. In each cycle, a new merge window is opened for accepting patches
 prepared for the next release. During the period of the merge window opening,
 only code deemed to be sufficiently stable is merged into the mainline kernel.
 This window opens for approximately two weeks. At the end of the window, Linus
@@ -171,10 +170,10 @@ with a suffix of "-rcN", which indicates the "Nth" of the candidate. During the
 rolling of "rc" versions, only bugfix patches are accepted. New features or new
 drivers are not welcome at this time. Linus is responsible for rolling these
 "rc" versions until the point that the code is believed to be stable enough.
-Then, a new stable kernel is spawned, and a new circle is started.
+Then, a new stable kernel is spawned, and a new cycle is started.
 
 If the contributor unluckily misses the merge window, the best thing he may do is
-wait for the next circle. However, this rule has exceptions; emergency
+wait for the next cycle. However, this rule has exceptions; emergency
 fixes or patches to fatal security problems are permitted to merge even if
 the merge window is closed.
 
@@ -204,7 +203,7 @@ is finally loaded and run in kernel space. It means:
 It is the developer's duty to keep the module consistent and insistent that the
 modules' upgrade won't break the APIs. Bugs, too, are unbearable in kernel
 modules. As mentioned before, modules run in kernelspace, any fatal bug can
-cause a system halt, such as deference an invalid pointer or deadlock.
+cause a system halt, such as dereferencing an invalid pointer or deadlock.
 
 Linux device driver is a subset of loadable modules, usually. Almost all device
 drivers can be compiled as a loadable module and loaded dynamically on demand.
@@ -219,5 +218,5 @@ be implemented as a loadable module.
 TODO:
 
 1. monolithic kernel, directly function call instead of IPC. IPC is expensive
-both in reousrce and time.
+both in resources and time.
 

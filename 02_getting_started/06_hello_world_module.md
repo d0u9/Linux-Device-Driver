@@ -52,7 +52,7 @@ and give more dives later.
 
 Programming interfaces exported by the kernel are scattered in a set or a
 single header file. According to the resources the device driver requests, the
-sources code contains different header files, which provide the interface to
+source code contains different header files, which provide the interface to
 that resource.
 
 The header file `linux/module.h` contains functions and macros that are very
@@ -81,7 +81,7 @@ make -C /lib/modules/$(uname -r)/build M=$(pwd) modules
 ```
 
 A particular make variable `M` is passed in the command above, which points to
-the directory that Makefile itself residents by assigning via `$(pwd)`. Besides,
+the directory that Makefile itself resides by assigning via `$(pwd)`. Besides,
 the `-C` option, which stands for "change to directory", tells the make command
 to read Makefiles in `/lib/modules/$(uname -r)/build` instead of the current
 work directory. Finally, `modules` is the build target. Feel strange, all
@@ -123,7 +123,7 @@ them in the control terminal.
 dmesg
 ```
 
-Your terminal screen maybe is flooded with various messages after executing the
+Your terminal screen may be flooded with various messages after executing the
 `dmesg` command. But don't worry, the "Hello, world!" message printed by example
 will finally appear at the end of the dump. The `dmesg` tool prints or controls
 the ring buffer of the kernel. By default, without any command options
@@ -163,7 +163,7 @@ the userspace program.
 
 The first bonus of developing modules in a virtual guest is that system crash
 caused by module flaws won't affect the host machine. The kernel panic is
-horrible. It may cause a deadly result to a system, such as file lost or system
+horrible. It may cause a deadly result to a system, such as file loss or system
 broken, and further make the host system unusable. Second, using a virtual
 machine makes it very convenient to test a kernel module against multiple kernel
 versions. Third, for device driver developers, sometimes underlying hardware that
@@ -172,7 +172,7 @@ However, driver developers have no time to wait for hardware's readiness for the
 sake of time. The virtual machine solves this problem by writing a simple
 virtual hardware that implements the basic circuit interfaces as design.
 
-Now, back to the QEMU virtual machine we have set up before, login into the
+Now, back to the QEMU virtual machine we have set up before, log in to the
 guest's terminal, and change the working directory to the `nfs` filesystem
 mounted for sharing files between host and guest. Execute the commands below:
 
@@ -188,7 +188,7 @@ make -C ~/LDD_ROOT/kernels/linux-stable M=$(pwd) modules
 # This is an auxiliary shell script created before.
 qemu_run.sh
 
-# Change to the NFS sharing direcotry. It is mounted at /mnt directory.
+# Change to the NFS sharing directory. It is mounted at /mnt directory.
 cd /mnt
 
 # Change to our example directory

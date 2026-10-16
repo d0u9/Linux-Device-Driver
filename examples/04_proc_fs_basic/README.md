@@ -18,9 +18,9 @@ interfaces and methods to dump content from Kernel to userspace more easily.
 Check '/home/doug/Linux_Kernel/linux/Documentation/filesystems/seq_file.txt'
 for more.
 
-This example uses `single_open()` interface. This interface is convenivent for
-dump less contents to userspace. For large chunck data, the iterator of
-seq_file is more powerful.
+This example uses the `single_open()` interface to expose a small amount of
+kernel data to user space. For larger amounts of data, the `seq_file` iterator
+interface is more suitable.
 
 ## build the module
 

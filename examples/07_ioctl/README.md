@@ -47,7 +47,7 @@ execute `make` to build the program. Note that, if you want to test different
 ioctl() requests, simply uncomment the statements in the source file
 accordingly, and rebuild the program.
 
-Defaultly, read the device file via `cat /dev/ioctl` you will get:
+By default, reading the device file via `cat /dev/ioctl` you will get:
 
 ```
 Hello ioctl()!

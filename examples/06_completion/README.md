@@ -49,7 +49,7 @@ This command will block the current process, waiting for that if some other
 process write something into the same file.
 
 Here, in console 2, execute `echo "something" > /dev/completion`. After this,
-the **cat** process previously executed in console 1 is waken up.
+the **cat** process previously executed in console 1 is woken up.
 
 ---
 

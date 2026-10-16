@@ -2,10 +2,10 @@
 
 This example looks very like the previous example -- 08_pipe_simple_sleep.
 However, the implementation details of this example is different. In this
-example, we dig into the process sleep mechanisim one step further, to handle
+example, we dig into the process sleep mechanism one step further, to handle
 more details of putting current process into sleep. We have to create wait
 queue, set current process state, test sleep condition, and wake up process
-when condition is fulfiled.
+when condition is fulfilled.
 
 ## build the module
 
@@ -39,7 +39,7 @@ you favoured. For example, here we use **cat**:
 cat /dev/pipe_advanced_sleep0
 ```
 
-The process of **cat** command will be blocked until something is writen into
+The process of **cat** command will be blocked until something is written into
 the same device file by other processes.
 
 Now, open another terminal via telnet, and write something to this device file.
@@ -50,8 +50,8 @@ echo "hello world!" > /dev/pipe_advanced_sleep0
 ```
 
 After successfully executing the command, the previous **cat** process will be
-waken up and fetch the contents we just write. After print out the content
-to the terminal, the **cat** process sleeps again to wait for more datas.
+woken up and fetch the contents we just write. After print out the content
+to the terminal, the **cat** process sleeps again to wait for more data.
 
 ---
 

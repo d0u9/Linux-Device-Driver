@@ -1,16 +1,13 @@
 # poll
 
-The poll mechanism is a Linux kernel mechanism for I/O event notification. Its
-function is to monitor multiplue file descriptors to see I/O is possible on
-any of them. Different from the tranditional block I/O, poll mechanism promise
-its users to monitor many file desciptors, normal file descriptrs or socket
-file descriptors. If any interested event occurs on any file desciptor, for
-example the file desciptor can be read or write, the poll will notify the user
-process and tell it what happlend.
+The `poll()` system call provides I/O multiplexing: a user space process can
+monitor multiple file descriptors for I/O readiness. Unlike a blocking
+`read()` or `write()` on a single descriptor, `poll()` can wait for events on
+a set of descriptors and report which ones are ready for the requested I/O.
 
 In this example, we implement a simple char device to test our poll ability.
 After the module is successfully loaded, a timer will be used to control the
-device if it is readable of writable. Each time the timer is out, the read flag
+device if it is readable or writable. Each time the timer is out, the read flag
 and write flag will be set to 1, and the value will be consumed when some
 processes read or write this device file. Here, we set the read flag each
 second elapsed, and set the write flag every two seconds elapsed.
@@ -43,7 +40,7 @@ After successfully load the driver, simply run the executable **poll.out** in
 the **test** directory.
 
 Each time the file descriptor is writable, we write the current loop counter
-into the device file. Likewise, each time the file desciptor is readable, we
+into the device file. Likewise, each time the file descriptor is readable, we
 read the content from it and print to the screen.
 
 As we described before, the file descriptor to the device file we opened will

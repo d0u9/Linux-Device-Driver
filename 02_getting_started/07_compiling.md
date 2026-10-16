@@ -91,7 +91,7 @@ not all rules are involved. Contrarily, a tiny subset of rules is sufficient.
 
 The Makefile used in the "hello world" example contains only one line rule in
 which an `obj-m` variable is defined and is assigned to a value of
-`hello_world.o`. This makefile maybe confuses the programmers who are familiar
+`hello_world.o`. This makefile may confuse the programmers who are familiar
 with programming in the userspace since no "target" is defined. Actually, the
 kbuild system defines the "modules" target in its makefile, and that target is
 used to build kernel modules out of the source tree by invoking the command:
@@ -131,16 +131,16 @@ kernel objects, and it then generates an integrated object file named
 `hello_world.o`. The `obj-m` variable takes the object file and turns it into
 the final `.ko`.
 
-Other details in this command worthing a note are the `-C` option, `M` option
+Other details in this command worth noting are the `-C` option, `M` option
 and `modules` target. `-C` is a standard make option, which instructs make doing
 a directory changing before doing any actual actions. In our example above, the
 `make` command first changes its working directory to
 `~/LDD_ROOT/kernels/linux-5.10.4` and starts building the `modules` target
 defined in the kernel's top-level makefile. The `M` is a make variable that
-informs the kbuild system that an extern module is going to be built. The value
+informs the kbuild system that an external module is going to be built. The value
 assigned to `M` is the directory where the module's kbuild file(makefile or
-kbuild file) residents. This path must be an absolute path. The `modules` target
-is not compulsory for extern module building. The `M` has told kbuild system
+kbuild file) resides. This path must be an absolute path. The `modules` target
+is not compulsory for external module building. The `M` has told kbuild system
 that an external module is being built.
 
 ## Advanced makefile
@@ -157,7 +157,7 @@ the building process:
 
 ```
 # Normally, kernel's build system defines the KERNELRELEASE variable.
-# Users can determine which context our make process is in by validing if
+# Users can determine which context our make process is in by checking if
 # KERNELRELEASE is defined.
 
 ifneq ($(KERNELRELEASE),)
@@ -273,7 +273,7 @@ A few of make targets are available when building an external module.
 
 - `clean`:
 
-    Remove all genereated files in the module directory.
+    Remove all generated files in the module directory.
 
 
 - `help`:
@@ -282,7 +282,7 @@ A few of make targets are available when building an external module.
 
 
 Usage of these targets is simple; we have seen the example of `modules` target
-before in the "hello_world" module building. A more formulatic description is
+before in the "hello_world" module building. A more formulaic description is
 given below for a quick reference.
 
 ```

@@ -2,7 +2,7 @@
 
 # what is initramfs
 
-Except from [Linux kernel documentation]:
+Excerpt from [Linux kernel documentation]:
 
 > All 2.6 Linux kernels contain a gzipped "cpio" format archive, which is
 > extracted into rootfs when the kernel boots up.  After extracting, the
@@ -96,7 +96,7 @@ chmod +x init
 
 The `-l` option of `setsid` command in **init** script is compulsory. That lack
 of this option will cause an error of "sh: can't access tty; job control turned
-off" during system booting. It is detailed in [Busybox's FAQ].
+off" during system booting. It is detailed in [BusyBox's FAQ].
 
 ## More setups
 
@@ -164,4 +164,4 @@ Press `<C-A> x` to terminate QEMU.
 
 [Linux kernel documentation]: https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux-stable.git/tree/Documentation/filesystems/ramfs-rootfs-initramfs.txt?h=v4.9.30
 [busybox's official web page]: https://www.busybox.net/downloads/binaries
-[Busybox's FAQ]: (https://www.busybox.net/FAQ.html#job_control)
+[BusyBox's FAQ]: (https://www.busybox.net/FAQ.html#job_control)

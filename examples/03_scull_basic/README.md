@@ -1,12 +1,10 @@
 # scull
 
 To best illustrate the concepts behind the basic file operations, device
-**scull** is the only choice. **scull** is a char driver that acts on a memory
-area as though it were a device. In this example, userspace program can write
-data to this device, and the device will hold all this data in memory until
-the next open of the device file. Any read operations performed on this device
-will extract the data out, and the data won't be swapt (Only open operation
-has the ability to sweep data).
+**scull** is the only choice. **scull** is a character device driver backed by
+memory. A user space program can write data to the device and read it back
+without consuming the stored data. Opening the device with `O_WRONLY` calls
+`scull_trim()` to clear the stored data and free the associated memory.
 
 ## build the module
 
@@ -44,7 +42,7 @@ like:
 [ 3850.344559] scull: scull_release() is invoked
 ```
 
-Next, read the device file which you've writen to before, if success, contents
+Next, read the device file which you've written to before, if success, contents
 previously wrote into are extracted. `dmesg | tail -10` will look like:
 
 ```

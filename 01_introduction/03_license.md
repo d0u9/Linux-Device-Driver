@@ -1,6 +1,6 @@
 # License
 
-Linux kernel is licensed under GPL 2.0. GPL shorts for the "GNU General Public
+Linux kernel is licensed under GPL 2.0. GPL is short for the "GNU General Public
 License", and the latest version is 3.0. Although the 3.0 version has been
 released for years, the Linux developers still stick to using GPL 2.0 as
 Linux's License.
@@ -36,6 +36,6 @@ proprietary modules against any function or variable exported with
 support for binary-blob and won't answer any questions about the usage or
 interface of such a module.
 
-Note: Nvidia has provided an open-source GPU driver on Github on May 11, 2022.
+Note: Nvidia has provided an open-source GPU driver on GitHub on May 11, 2022.
 
 # ¶ The end

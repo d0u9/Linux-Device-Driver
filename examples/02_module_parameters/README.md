@@ -36,7 +36,7 @@ Running `dmesg | tail -10`, you can find something like this:
 [ 1141.508953] #0 Hello, Mom
 ```
 
-It is right that we defautly set to print **hello, Mom** only one time. Next we
+By default, the module prints **hello, Mom** only once. Next we
 unload this module and pass parameters to it when loading.
 
 ```bash

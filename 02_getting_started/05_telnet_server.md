@@ -6,7 +6,7 @@
 > control information in an 8-bit byte oriented data connection over the
 > Transmission Control Protocol (TCP).
 
-Sometimes, the ability to login into the guest system for debugging is
+Sometimes, the ability to log in to the guest system for debugging is
 essential. This ability helps run multiple processes in different terminals.
 For example, when testing the FIFO device driver, two or more terminals are
 needed to fetch and feed data from and to the FIFO device simultaneously.
@@ -15,13 +15,13 @@ Using **Telnet**, which implements the DARPA protocol, is a simple solution to
 this problem. Benefiting from the integration of telnet server in BusyBox
 binary, setting up telnet for remote login is pretty easy.
 
-The `telnet` server in the Busybox is named `telnetd`; it only provides
+The `telnet` server in the BusyBox is named `telnetd`; it only provides
 fundamental functionalities compared to a complete version of the telnet server
 usually installed via the package manager on a regular Linux distribution.
 
 # Setup pts device node
 
-It must have a **pts** device node exist to make Busybox function correctly.
+It must have a **pts** device node exist to make BusyBox function correctly.
 Create the device node by invoking:
 
 ```bash
@@ -91,7 +91,7 @@ On the host side, connect to the telnet server in the QEMU guest by running:
 telnet localhost 7023
 ```
 
-On successful, you will get the shell promoter in the terminal. Next, make this
+On success, you will get the shell prompt in the terminal. Next, make this
 telnetd server start automatically again by writing the line in the `init`
 script.
 

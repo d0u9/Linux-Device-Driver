@@ -5,7 +5,7 @@ common operation, especially during the process of development and debugging.
 However, for QEMU guests, there is no such ssh server running inside that is
 used for syncing files to and from guests.
 
-To this problem, NFS is a simple and grace solution. Running an NFS server on
+To this problem, NFS is a simple and graceful solution. Running an NFS server on
 your development host and mounting the NFS filesystem in QEMU virtual machine
 is fairly simple. That no tool needs to be installed in QEMU guests makes life
 fast and easy.
@@ -56,7 +56,7 @@ have to expand this variable manually to its real absolute path.
 
 For agile development, manually mounting this NFS filesystem each time the QEMU
 guest booting is time-consuming. It is extremely unfriendly for the development
-circle of sync-build-test. To ease this redundant work, set up automatic
+cycle of sync-build-test. To ease this redundant work, set up automatic
 mounting in the `init` script by appending the command below right after the
 `sleep 0.5` command.
 

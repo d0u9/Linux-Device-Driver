@@ -1,17 +1,13 @@
 # asynchronous_notification
 
-Asynchronous notification is a mechanism to notify the user program that
-interested I/O is ready to operate. Using poll or select is a sort to
-synchonous of I/O notification, the process will be blocked on the call to
-poll or select function until the underlaying I/O device is becoming ready
-again. The CPU is occupied during the entire period, no other operations can
-be taken. However, in asynchronous notification, the CPU can be handled to
-other process for other tasks, when the I/O is ready, a signal(usually SIGIO)
-is send to the process which interrupts the current process to let the I/O
-event can be processed in time.
+Asynchronous notification lets a driver notify a user space process of I/O
+readiness using a signal, usually SIGIO. In contrast, `poll()` and `select()`
+provide I/O multiplexing and can put the calling task to sleep while waiting
+for readiness events. A sleeping task does not occupy the CPU; the scheduler
+can run other tasks.
 
 In this example, we write a simple device driver which implements the basic
-asynchronous notification mechansim. When some processes write any data to
+asynchronous notification mechanism. When some processes write any data to
 the device file, the process who set the file descriptor as async will receive
 the SIGIO signal. The process could catch this signal and check the file
 descriptor state for reading or writing.
@@ -41,7 +37,7 @@ sh load_module.sh
 
 ## test the module
 
-To test this kernel module, first compile and copy the test program loacated
+To test this kernel module, first compile and copy the test program located
 in **test** directory to the target machine. Then, after the module is
 successfully loaded, run the test program **async_notify.out**.
 

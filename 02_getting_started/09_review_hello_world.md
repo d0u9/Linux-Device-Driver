@@ -3,17 +3,13 @@
 
 ## Details in code
 
-There are two functions defined in our hello world module, one is the
-constructor function, and another is the destructor function. The module loader
-invokes the constructor function during the loading time, and the same, the
-module loader invokes the destructor function when the module is removed from
-the kernel. Unlike C programs in the userspace, there is no `main()` function
-or alike in the kernel module. The module logical entry point is the function
-passed to the `module_init()` macro. Also, unlike userspace programs, the kernel
-won't help us free any resources allocated during the running of the module.
-That is the deconstructor's work to release any resources, such as hardware
-handlers or memory segments, allocated before. This deconstructor is registered
-via the `module_exit()` macro and is invoked as the last function of the module.
+Our hello world module defines a module initialization function and a module
+exit function. The initialization function, registered with `module_init()`,
+runs when the module is loaded. The exit function, registered with
+`module_exit()`, runs when the module is unloaded. Unlike a user space C
+program, a kernel module has no `main()` function. The module must release
+the resources it acquires, such as allocated memory and hardware resources;
+the exit function is responsible for cleanup when the module is unloaded.
 
 Another macro that has been mentioned before is `MODULE_LICENSE()`. It is used
 to tell the kernel what the license this module opts for use. Using functions

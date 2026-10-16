@@ -59,10 +59,10 @@ the running kernel.
 
 Kernel's APIs and data structures are continuously evolving in time by adding
 and abandoning functions that no longer satisfy the design. And the cruel fact
-is that modules ofter need the ability to run on multiple kernels with different
+is that modules often need the ability to run on multiple kernels with different
 versions. For example, Linux users can install graphic cards of the same type
 on various Linux hosts on which different kernels run. Driver developers cannot
-assume the target kernel version, which their customs install. It is the driver
+assume the target kernel version, which their customers install. It is the driver
 developer's duty to keep the driver compatible with different kernel versions.
 To solve this, module developers have to be familiar with using `#ifdef` macros
 to build the code properly on different hosts. Linux kernel itself provides a

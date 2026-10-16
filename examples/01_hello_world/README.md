@@ -1,6 +1,6 @@
 # hello world
 
-This example demostrates the baisc concepts and process needed in building a
+This example demonstrates the basic concepts and process needed in building a
 kernel module.
 
 
@@ -35,7 +35,7 @@ At the very end of the output, a `Hello World` message will be seen.
 
 ## remove the module
 
-When the module is not longger needed anymore, remove it from the kernel to
+When the module is no longer needed, remove it from the kernel to
 release all the resources it occupied.
 
 ```bash

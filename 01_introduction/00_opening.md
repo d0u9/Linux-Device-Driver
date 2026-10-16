@@ -4,7 +4,7 @@ Operating System acts a more and more important role in modern era. Among them,
 the vast popular one is Linux, an open source and free operating system that
 allows everyone to modify, contribute and redistribute. For a few years ago,
 during the period of the publish of book Linux Device Driver, 3rd edition,
-Linux is litter known to folks both in custom and enterprise fields. But, with
+Linux is little known to folks both in custom and enterprise fields. But, with
 the rise of cloud computing, artificial intelligence, container technology and
 serverless technology, Linux is becoming a center which glues each piece of the
 components.

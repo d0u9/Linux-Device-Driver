@@ -1,14 +1,14 @@
 # Summary
 
-To this point, we have properly setup up our QEMU development environment for
+To this point, we have properly set up our QEMU development environment for
 Linux Driver. During the chapters before, a few works have stepped including:
 
 - Patch and build QEMU.
 - Configure and build Linux kernel image, on which all examples will run.
-- Setup an initramfs image to help booting system up and give some basic
+- Set up an initramfs image to help booting system up and give some basic
   configurations to system.
 - Mount NFS filesystem in QEMU guest for fast sharing files between host and guest.
-- Setup telnet service to allow users create multiple shell environment.
+- Set up telnet service to allow users create multiple shell environment.
 
 As a summary, we paste the complete configurations of QEMU command and initramfs'
 init script below for a quick reference.
@@ -46,8 +46,8 @@ setsid sh -c 'exec sh -l </dev/ttyS0 >/dev/ttyS0 2>&1'
 
 # QEMU command options
 
-For samples in this repo, some specific hardwares is essential to test and debug
-our drivers. Some of these hardwares are integrated in QEMU, and the others are
+For samples in this repo, some specific hardware is essential to test and debug
+our drivers. Some of these hardware devices are integrated in QEMU, and the others are
 implemented by myself for the pure purpose of education.
 
 It is very convenient to write the long QEMU command in a auxiliary shell script

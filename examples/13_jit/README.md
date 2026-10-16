@@ -1,14 +1,14 @@
 # jit
 
 How to measure time in the Kernel? How to delay a specific time period in the
-Kernel? Time is very essential to softwares. The entire Kernel and related
-function a propelled by time, the timer device hardware interrupts the Kernel
+Kernel? Time is very essential to software. The entire Kernel and related
+functions are propelled by time, the timer device hardware interrupts the Kernel
 periodically to spur the Kernel running.
 
 To driver developers, how to get the current time, how to measure the elapsed
 time, how to delay the execution of a specific task is common cases.
 
-In this example, we implement a simple deriver which exports files in the root
+In this example, we implement a simple driver which exports files in the root
 of **/proc** filesystem. Reads to each of these files will get current time of
 kernel, or delay a short period which may delay the read process of the whole
 kernel.
@@ -73,7 +73,7 @@ This driver export 8 files in the **/proc** filesystem after it is loaded.
    designated by `delay` variable. The under layer implementation uses
    `cpu_relax()` function in a busy loop to fulfil this delay purpose. However,
    the `cpu_relax()` function actually does nothing but insert `nop`
-   instructions, so the this approach should definitely be avoided whenever
+   instructions, so this approach should definitely be avoided whenever
    possible.
 
 3. **jitsched**
@@ -102,7 +102,7 @@ This driver export 8 files in the **/proc** filesystem after it is loaded.
    The previous methods of delay all block the current process until the time
    has elapsed. Sometimes we need some mechanism which won't block the current
    process but can notify us the timeout. Kernel timer is best candidate.
-   In this implementation, the we set the timeout value to `delay` variable. In
+   In this implementation, we set the timeout value to `delay` variable. In
    the timeout handler, we print some kernel information about the current 
    execution context.
 
