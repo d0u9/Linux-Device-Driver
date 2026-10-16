@@ -30,7 +30,7 @@ int block_open(struct block_device *bdev, fmode_t mode)
 {
 	struct ldd_dev *ldd_dev = bdev->bd_disk->private_data;
 
-	del_timer_sync(&ldd_dev->timer);
+	timer_delete_sync(&ldd_dev->timer);
 	spin_lock(&ldd_dev->lock);
 	if (!ldd_dev->users)
 		check_disk_change(bdev);
@@ -209,7 +209,7 @@ static struct blk_mq_ops mq_ops_full = {
 
 void timeout_cb(struct timer_list *timer)
 {
-	struct ldd_dev *ldd_dev = from_timer(ldd_dev, timer, timer);
+	struct ldd_dev *ldd_dev = timer_container_of(ldd_dev, timer, timer);
 
 	spin_lock(&ldd_dev->lock);
 	pr_warn("timeout!!\n");	

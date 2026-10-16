@@ -125,7 +125,7 @@ int jiq_read_wq(struct seq_file *m, void *v)
 static
 void jiq_timedout(struct timer_list *t)
 {
-	struct jiq_dev *dev = from_timer(dev, t, timer);
+	struct jiq_dev *dev = timer_container_of(dev, t, timer);
 
 	pr_debug("%s() is invoked\n", __FUNCTION__);
 
@@ -152,7 +152,7 @@ int jiq_read_run_timer(struct seq_file *m, void *v)
 	add_timer(&jiq_dev->timer);
 	wait_event_interruptible(jiq_dev->jiq_wait, jiq_dev->timeout);
 	jiq_dev->timeout = 0;
-	del_timer_sync(&jiq_dev->timer);
+	timer_delete_sync(&jiq_dev->timer);
 
 	seq_printf(m, "%s", jiq_dev->buf);
 

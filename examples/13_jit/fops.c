@@ -94,7 +94,7 @@ struct jit_data {
 
 void jit_timer_fn(struct timer_list *t)
 {
-	struct jit_data *data = from_timer(data, t, timer);
+	struct jit_data *data = timer_container_of(data, t, timer);
 	unsigned long j = jiffies;
 
 	pr_debug("%s() is invoked\n", __FUNCTION__);

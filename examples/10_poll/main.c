@@ -23,7 +23,7 @@ static struct file_operations fops = {
 static
 void timer_fn(struct timer_list *t)
 {
-	struct poll_dev *dev = from_timer(dev, t, timer);
+	struct poll_dev *dev = timer_container_of(dev, t, timer);
 
 	pr_debug("%s() is invoked\n", __FUNCTION__);
 
@@ -110,7 +110,7 @@ void __exit m_exit(void)
 	printk(KERN_WARNING MODULE_NAME " unloaded\n");
 
 	cdev_del(&poll_dev->cdev);
-	del_timer_sync(&poll_dev->timer);
+	timer_delete_sync(&poll_dev->timer);
 
 	devno = MKDEV(poll_major, poll_minor);
 	unregister_chrdev_region(devno, POLL_DEV_NR);

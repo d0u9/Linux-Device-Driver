@@ -14,7 +14,7 @@ static struct ldd_tty_dev	*ldd_dev_table;
 static void ldd_tty_timer_func(struct timer_list *t)
 {
 	int i, rv, data_size = 1;
-	struct ldd_tty_dev *ldd_dev = from_timer(ldd_dev, t, timer);
+	struct ldd_tty_dev *ldd_dev = timer_container_of(ldd_dev, t, timer);
 	struct tty_struct *tty;
 	struct tty_port *port;
 	char data[1] = { 'z' };
@@ -82,7 +82,7 @@ static void __ldd_tty_close(struct ldd_tty_dev *ldd_dev)
 	if (ldd_dev->open_count <= 0) {
 		ldd_dev->open_count = 0;
 		ldd_dev->tty = NULL;
-		del_timer(&ldd_dev->timer);
+		timer_delete(&ldd_dev->timer);
 	}
 
 out:
@@ -433,7 +433,7 @@ void __exit m_exit(void)
 	for (i = 0; i < LDD_TTY_MINOR_NR; ++i) {
 		destroy_ldd_dev(ldd_dev_table + i);
 		tty_port_destroy(&ldd_dev_table[i].port);
-		del_timer(&ldd_dev_table[i].timer);
+		timer_delete(&ldd_dev_table[i].timer);
 	}
 
 	kfree(ldd_dev_table);
