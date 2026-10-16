@@ -181,7 +181,7 @@ static void destroy_chrdev(struct irq_dev *irq_dev)
 	unregister_chrdev_region(irq_dev->devno, 1);
 }
 
-irqreturn_t irq_service(int irq, void *dev_id)
+static irqreturn_t irq_service(int irq, void *dev_id)
 {
 	struct irq_dev *irq_dev = (struct irq_dev*)(dev_id);
 	pr_debug("irq triggered: irq = %d\n", irq);

@@ -79,7 +79,7 @@ static struct file_operations fops = {
 	.release = short_release,
 };
 
-irqreturn_t irq_service(int irq, void *dev_id)
+static irqreturn_t irq_service(int irq, void *dev_id)
 {
 	struct short_dev *dev = (struct short_dev*)(dev_id);
 	unsigned long flags;
