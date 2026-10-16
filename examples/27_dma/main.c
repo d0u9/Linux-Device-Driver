@@ -106,7 +106,7 @@ long dev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		return -ENOTTY;
 	}
 
-	rv = access_ok(arg, _IOC_SIZE(cmd));
+	rv = access_ok((void __user *)arg, _IOC_SIZE(cmd));
 	if (!rv)
 		return -EFAULT;
 

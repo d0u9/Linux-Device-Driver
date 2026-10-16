@@ -125,7 +125,7 @@ long ioctl_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		return -ENOTTY;
 	}
 
-	err = access_ok(arg, _IOC_SIZE(cmd));
+	err = access_ok((void __user *)arg, _IOC_SIZE(cmd));
 	if (!err)
 		return -EFAULT;
 
