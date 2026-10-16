@@ -6,17 +6,18 @@ kernel module.
 
 ## build the module
 
-To build this module, execute:
+To build this module for the QEMU guest, run on the host from this directory:
 
 ```bash
-make KERNELDIR=/path/to/kernel/source/dir
+make KERNELDIR="$LDD_ROOT/src/linux-stable"
 ```
 
 If you have already set and exported `KERNELDIR` environment variable, simply
 execute `make` is enough.
 
-If neither `KERNELDIR` environment variable nor `KERNELDIR` option of make
-are set, the current running kernel will be built against.
+If neither the `KERNELDIR` environment variable nor the make option is set,
+the module is built against the running host kernel, which may differ from
+the guest kernel. Workspace activation sets `LDD_ROOT`, not `KERNELDIR`.
 
 ## run the module
 
