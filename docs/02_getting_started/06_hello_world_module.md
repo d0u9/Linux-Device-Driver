@@ -31,7 +31,8 @@ MODULE_AUTHOR("Douglas Su");
 MODULE_DESCRIPTION("Hello World program");
 ```
 
-Put this source file in an empty directory, and name it `hello_world.c`.
+Put this source file in an empty directory under `$LDD_ROOT/shared` on the
+host, and name it `hello_world.c`, so it is accessible from the guest.
 
 This sample code is quite simple, with just a few lines of code there, and it
 is self-explained in that only two functions are defined with a meaningful name
@@ -72,18 +73,18 @@ Pretty simple, all right? It is sufficient for simple projects with one source
 file like our "hello world" example. Copy and paste it to a text file named
 `Makefile` in the same directory where the C file locates.
 
-Then, build the first kernel module by running the command below in your
-terminal. Run the `make` command in the same directory that contains the
-Makefile and the C source file. 
+**RUN ON HOST:** Build against the guest kernel configured and built in the
+previous chapters. Run `make` in the directory containing the module's
+Makefile and C source file.
 
-```
-make -C /lib/modules/$(uname -r)/build M=$(pwd) modules
+```bash
+make -C "$LDD_ROOT/src/linux-stable" M="$(pwd)" modules
 ```
 
 A particular make variable `M` is passed in the command above, which points to
 the directory that Makefile itself resides by assigning via `$(pwd)`. Besides,
 the `-C` option, which stands for "change to directory", tells the make command
-to read Makefiles in `/lib/modules/$(uname -r)/build` instead of the current
+to read Makefiles in `$LDD_ROOT/src/linux-stable` instead of the current
 work directory. Finally, `modules` is the build target. Feel strange, all
 right? The Makefile created before seems not to be used at all. That is due to
 the peculiarity of how the kernel's build system works. We will talk about this
@@ -102,12 +103,14 @@ One is `modprobe`, which is mainly used, and another is `insmod`, which is
 trivial and straightforward. For most scenarios, `modprobe` is the best choice
 for it is more clever and can handle module dependencies. The `modprobe` tool
 finds modules and relative files by looking up in the module directory,
-`/lib/modules/$(uname -r)`. Add configurations in `/etc/modprobe.d` directory
-to set additional search locations. However, in the "hello world" module,
+`/lib/modules/$(uname -r)`. However, in the "hello world" module,
 `insmod` command is a better choice since it is simple enough that no extra
 knowledge is needed. As its name implies: insert a module file into the kernel.
 
-```bash
+**RUN IN GUEST:** Change to the module directory under `/mnt`, corresponding
+to its host directory under `$LDD_ROOT/shared`.
+
+```sh
 # Use insmod to insert hello-world module into the kernel.
 insmod hello_world.ko
 ```
@@ -119,7 +122,9 @@ function are written to an internal circular buffer maintained by the kernel.
 Userspace tools, such as `dmesg`, can fetch the kernel's log messages and print
 them in the control terminal.
 
-```bash
+**RUN IN GUEST:**
+
+```sh
 dmesg
 ```
 
@@ -131,7 +136,7 @@ specified, `dmesg` displays all kernel messages. If the kernel's ring buffer
 does not overrun, the log printed by the kernel and various kernel modules after
 the system's boot is dumped.
 
-Use 'dmesg -C` to clear the ring buffer.
+Use `dmesg -C` to clear the ring buffer.
 
 ## Unload module
 
@@ -172,25 +177,20 @@ However, driver developers have no time to wait for hardware's readiness for the
 sake of time. The virtual machine solves this problem by writing a simple
 virtual hardware that implements the basic circuit interfaces as design.
 
-Now, back to the QEMU virtual machine we have set up before, log in to the
-guest's terminal, and change the working directory to the 9p filesystem
-mounted for sharing files between host and guest. Execute the commands below:
+The steps below use the repository's `examples/01_hello_world` directory.
+Start QEMU on the host as described in the [shared-directory setup], then
+use its serial console or the [Telnet connection] for the guest commands.
 
-1. On the host, recompile the module against the stable kernel:
-
-```
-make -C ~/LDD_ROOT/kernels/linux-stable M=$(pwd) modules
-```
-
-2. load and test in guest:
+**RUN ON HOST:** Recompile the module against the guest kernel.
 
 ```bash
-# This is an auxiliary shell script created before.
-qemu_run.sh
+cd "$LDD_ROOT/shared/Linux-Device-Driver/examples/01_hello_world"
+make -C "$LDD_ROOT/src/linux-stable" M="$(pwd)" modules
+```
 
-# Change to the shared directory. It is mounted at /mnt directory.
-cd /mnt
+**RUN IN GUEST:** Load and test the module from the mounted share.
 
+```sh
 # Change to our example directory
 cd /mnt/Linux-Device-Driver/examples/01_hello_world
 
@@ -203,12 +203,13 @@ dmesg
 
 // TODO: explain why message is printed instantly.
 
-To unload the module, use `rmmod` command:
+**RUN IN GUEST:** Unload the module with `rmmod`.
 
-```
+```sh
 rmmod hello_world
 ```
 
 # ¶ The end
 
-
+[shared-directory setup]: 04_shared_directory.md
+[Telnet connection]: 05_telnet_server.md
