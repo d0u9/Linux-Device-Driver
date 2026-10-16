@@ -92,7 +92,7 @@ struct jit_data {
 
 #define JIT_ASYNC_LOOPS 5
 
-void jit_timer_fn(struct timer_list *t)
+static void jit_timer_fn(struct timer_list *t)
 {
 	struct jit_data *data = timer_container_of(data, t, timer);
 	unsigned long j = jiffies;
@@ -169,7 +169,7 @@ alloc_buf_error:
 	return retval;
 }
 
-void jit_tasklet_fn(unsigned long arg)
+static void jit_tasklet_fn(unsigned long arg)
 {
 	struct jit_data *data = (struct jit_data *)arg;
 	unsigned long j = jiffies;
