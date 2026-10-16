@@ -1,23 +1,27 @@
 # Compile Linux Kernel
 
-# Download Source
+# Build dependencies
+
+On Fedora:
+
+```bash
+sudo dnf install flex bison ncurses-devel elfutils-libelf-devel openssl-devel
+```
+
+# Kernel source
 
 Linux kernel sources of different versions are listed on its official web, [The Linux Kernel Archives].
 
-At the time I write this documentation, the latest stable kernel version is
-**5.10.4**, and the examples in this book are implemented against this version.
+This chapter targets the Linux **7.2.y** stable series, using **7.2.11** below.
 
-There are many ways to obtain the kernel source. For example, download a tarball directly, make a git clone from the official's git repo, or even get a new version by patching an old one.
+Download the release tarball and extract it into `$LDD_ROOT/src/linux-stable`:
 
-Here, we directly download the kernel source tarball from the official website and extract it locally in `$LDD_ROOT/kernel/` directory.
-
-To download and extract the source ball:
-
-
-```
-mkdir $LDD_ROOT/kernel && cd $LDD_ROOT/kernel
-wget https://cdn.kernel.org/pub/linux/kernel/v5.x/linux-5.10.4.tar.xz
-tar -xf linux-5.10.4.tar.xz
+```bash
+mkdir -p "$LDD_ROOT/src"
+cd "$LDD_ROOT/src"
+wget https://cdn.kernel.org/pub/linux/kernel/v7.x/linux-7.2.11.tar.xz
+mkdir linux-stable && tar -xf linux-7.2.11.tar.xz -C linux-stable --strip-components=1
+cd linux-stable
 ```
 
 # Configure Linux Kernel
@@ -32,12 +36,28 @@ Firstly, set the kernel to the default configuration. Then, tailor it based on
 the default configuration to fit our needs by disabling some unnecessary
 drivers.
 
-```
+```bash
 make defconfig
-make menuconfig
+
+scripts/config \
+    --disable SOUND \
+    --disable WLAN \
+    --disable USB_NET_DRIVERS \
+    --disable WIRELESS \
+    --disable IPV6 \
+    --disable IA32_EMULATION \
+    --disable E100 \
+    --enable E1000 \
+    --disable E1000E \
+    --disable RUST
+
+make olddefconfig
 ```
 
-Disable unnecessary components:
+`make olddefconfig` resolves Kconfig dependencies after the edits.
+
+The commands above adjust the listed options, not every Ethernet driver.
+Use `make menuconfig` for the remaining drivers or to review the configuration:
 
 1. Disable all sound card supports:
 
@@ -62,9 +82,9 @@ Disable unnecessary components:
      [*] Network device support  --->
        [*]   Ethernet driver support  --->
          [*]   Intel devices
-           <*>     Intel(R) PRO/100+ support
+           < >     Intel(R) PRO/100+ support
            <*>     Intel(R) PRO/1000 Gigabit Ethernet support
-           <*>     Intel(R) PRO/1000 PCI-Express Gigabit Ethernet support 
+           < >     Intel(R) PRO/1000 PCI-Express Gigabit Ethernet support
    ```
 
 4. Disable IPv6 support. Currently, no content about IPv6 in our examples.
@@ -85,10 +105,10 @@ Disable unnecessary components:
 # Compiling
 
 ```
-make -j bzImage
+make -j"$(nproc)" bzImage
 
 # Generate Module.symvers file
-make -j modules
+make -j"$(nproc)" modules
 ```
 
 # ¶ The end
