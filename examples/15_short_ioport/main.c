@@ -16,17 +16,17 @@ static int major = 0;
 static unsigned long base = 0x200;
 unsigned long short_base = 0;
 
-int short_open(struct inode *inode, struct file *filp)
+static int short_open(struct inode *inode, struct file *filp)
 {
 	return 0;
 }
 
-int short_release(struct inode *inode, struct file *filp)
+static int short_release(struct inode *inode, struct file *filp)
 {
 	return 0;
 }
 
-ssize_t short_read(struct file *filp, char __user *buf, size_t count, loff_t *f_pos)
+static ssize_t short_read(struct file *filp, char __user *buf, size_t count, loff_t *f_pos)
 {
 	unsigned long port = short_base;
 	char v;
@@ -47,7 +47,7 @@ ssize_t short_read(struct file *filp, char __user *buf, size_t count, loff_t *f_
 	return 1;
 }
 
-ssize_t short_write(struct file *filp, const char __user *buf, size_t count,
+static ssize_t short_write(struct file *filp, const char __user *buf, size_t count,
 		loff_t *f_pos)
 {
 	unsigned long port = short_base;
