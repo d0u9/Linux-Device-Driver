@@ -26,7 +26,11 @@ if [ "$#" -gt 0 ]; then
     names=("$@")
 else
     names=()
-    for dir in "$WORK"/*/; do names+=("$(basename -- "$dir")"); done
+    # Unfinished examples are skipped unless named explicitly.
+    for dir in "$WORK"/*/; do
+        case "$dir" in *_NOT_COMPLETE/) continue ;; esac
+        names+=("$(basename -- "$dir")")
+    done
 fi
 
 failed=()

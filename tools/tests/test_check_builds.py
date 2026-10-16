@@ -12,6 +12,10 @@ REPO = SCRIPT.parents[1]
 
 class CheckBuildsTest(unittest.TestCase):
     def test_reports_failures_and_keeps_checkout_clean(self):
+        status = lambda: subprocess.run(
+            ["git", "status", "--porcelain", "--ignored", "examples"],
+            cwd=REPO, capture_output=True, text=True).stdout
+        before = status()
         with tempfile.TemporaryDirectory(prefix="ldd-kernel-") as tmp:
             kernel = Path(tmp)
             # Fake kbuild: fails only for 03_scull_basic.
@@ -31,9 +35,11 @@ class CheckBuildsTest(unittest.TestCase):
             self.assertIn("FAIL 03_scull_basic", bad.stdout)
             self.assertIn("1 built, 2 failed", bad.stdout)
 
-        status = subprocess.run(["git", "status", "--porcelain", "examples"],
-                                cwd=REPO, capture_output=True, text=True)
-        self.assertEqual(status.stdout, "")
+            everything = run()
+            self.assertIn("01_hello_world", everything.stdout)
+            self.assertNotIn("_NOT_COMPLETE", everything.stdout)
+
+        self.assertEqual(status(), before)
 
     def test_rejects_non_kernel_dir(self):
         with tempfile.TemporaryDirectory() as tmp:
