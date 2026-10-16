@@ -1,6 +1,6 @@
 # Linux-Device-Driver
 
-Examples of Linux Device Drivers, currently for kernel 5.10.
+Examples of Linux device drivers, currently targeting Linux 7.2.x.
 
 # NOTE: Apologies for the delay in maintaining this project, sincerely.
 
@@ -16,8 +16,12 @@ workspace and install the helper scripts.
 
 # Before start
 
-The examples in this repo are compiled against Linux Kernel 5.10. Other versions
-of the Kernel are not tested.
+Current test baseline:
+
+- Kernel: Linux 7.2.x.
+- Host system: Fedora release 44 (Forty Four).
+
+Other kernel versions and host distributions are not tested.
 
 Set `KERNELDIR` environment variable to the Linux kernel source dir, and export 
 it to your local shell.
