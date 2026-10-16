@@ -13,6 +13,7 @@
 struct async_io_dev *async_io_devs;
 int major;
 
+static
 int async_io_open(struct inode *inode, struct file *filp)
 {
 	pr_debug("%s() is invoked\n", __FUNCTION__);
