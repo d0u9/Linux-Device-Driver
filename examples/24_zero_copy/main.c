@@ -16,7 +16,7 @@
 static int major;
 static struct zero_copy_dev zdev;
 
-int zero_open(struct inode *inode, struct file *filp)
+static int zero_open(struct inode *inode, struct file *filp)
 {
 	struct zero_copy_ctx *ctx = kzalloc(sizeof(*ctx), GFP_KERNEL);
 	filp->private_data = ctx;
@@ -27,7 +27,7 @@ int zero_open(struct inode *inode, struct file *filp)
 	return 0;
 }
 
-int zero_release(struct inode *inode, struct file *filp)
+static int zero_release(struct inode *inode, struct file *filp)
 {
 	int i;
 	struct zero_copy_ctx *ctx = filp->private_data;
@@ -42,7 +42,7 @@ int zero_release(struct inode *inode, struct file *filp)
 	return 0;
 }
 
-long ioc_open(struct file *filp, struct ioc_msg *__user arg)
+static long ioc_open(struct file *filp, struct ioc_msg __user *arg)
 {
 	int i, ret = 0, pinned, npages;
 	struct page **pages;
@@ -84,7 +84,7 @@ out:
 	return ret;
 }
 
-long ioc_get(struct file *filp, unsigned long intval)
+static long ioc_get(struct file *filp, unsigned long intval)
 {
 	int i;
 	void *addr;
@@ -99,7 +99,7 @@ long ioc_get(struct file *filp, unsigned long intval)
 	return 0;
 }
 
-long ioc_put(struct file *filp)
+static long ioc_put(struct file *filp)
 {
 	int i;
 	void *addr;
@@ -113,7 +113,7 @@ long ioc_put(struct file *filp)
 	return 0;	
 }
 
-long zero_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
+static long zero_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 {
 	if (_IOC_TYPE(cmd) != IOCTL_IOC_MAGIC)
 		return -ENOTTY;
@@ -121,7 +121,7 @@ long zero_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	switch (cmd) {
 	case IOCTL_OPEN:
 		pr_debug("IOCTL_OPEN\n");
-		return ioc_open(filp, (struct ioc_msg *__user)arg);
+		return ioc_open(filp, (struct ioc_msg __user *)arg);
 	case IOCTL_GET:
 		pr_debug("IOCTL_GET\n");
 		return ioc_get(filp, arg);
