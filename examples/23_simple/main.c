@@ -16,7 +16,7 @@ static unsigned long pfn;
 
 static int major;
 static struct cdev SimpleDevs[DEV_NR];
-void simple_vma_open(struct vm_area_struct *vma)
+static void simple_vma_open(struct vm_area_struct *vma)
 {
 	size_t len = vma->vm_end - vma->vm_start;
 	pr_debug("vma_open -- vm_start: %#lx, vm_end: %#lx\n, len: %#lx, vm_pgoff: %#lx(%#lx), ops=%p\n",
@@ -25,7 +25,7 @@ void simple_vma_open(struct vm_area_struct *vma)
 		 vma->vm_ops);
 }
 
-void simple_vma_close(struct vm_area_struct *vma)
+static void simple_vma_close(struct vm_area_struct *vma)
 {
 	int refc;
 	size_t len = vma->vm_end - vma->vm_start;
