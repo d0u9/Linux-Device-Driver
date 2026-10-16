@@ -195,15 +195,15 @@ error:
 	return retval;
 }
 
-unsigned int skel_poll(struct file *filp, poll_table *wait)
+static __poll_t skel_poll(struct file *filp, poll_table *wait)
 {
-	unsigned int mask = 0;
+	__poll_t mask = 0;
 	struct usb_skel *dev = filp->private_data;
 
 	poll_wait(filp, &dev->wq, wait);
 	if (atomic_dec_and_test(&dev->can_rd)) {
 		pr_debug("Now fd can be read\n");
-		mask |= POLLIN | POLLRDNORM;
+		mask |= EPOLLIN | EPOLLRDNORM;
 	}
 
 	return mask;
@@ -307,7 +307,7 @@ static int skel_probe(struct usb_interface *interface, const struct usb_device_i
 	}
 
 	pipe = usb_rcvintpipe(dev->udev, dev->int_in_endpointAddr);
-	maxp = usb_maxpacket(dev->udev, pipe, usb_pipeout(pipe));
+	maxp = usb_maxpacket(dev->udev, pipe);
 
 	dev->int_in_buffer = usb_alloc_coherent(dev->udev, 8, GFP_ATOMIC, &dev->irq_urb->transfer_dma);
 	if (!dev->int_in_buffer) {
