@@ -22,16 +22,18 @@ class InstallerTest(unittest.TestCase):
                                cwd="/", check=True, capture_output=True)
                 self.assertEqual((runtime / "activate").read_bytes(),
                                  (TOOLS / "activate").read_bytes())
-                self.assertEqual((runtime / "bin/qemu").read_bytes(),
-                                 (TOOLS / "bin/qemu").read_bytes())
-                self.assertTrue(os.access(runtime / "bin/qemu", os.X_OK))
+                for name in ("qemu", "boot.sh", "rebuild_initramfs.sh"):
+                    self.assertEqual((runtime / "bin" / name).read_bytes(),
+                                     (TOOLS / "bin" / name).read_bytes())
+                    self.assertTrue(os.access(runtime / "bin" / name, os.X_OK))
                 self.assertEqual(sorted(p.name for p in runtime.iterdir()),
                                  ["activate", "bin", "initramfs", "kernels", "shared", "src"])
                 for name in ("bin", "src", "kernels", "initramfs", "shared"):
                     self.assertTrue((runtime / name).is_dir())
                 self.assertEqual(existing_file.read_text(), "existing guest file")
                 self.assertEqual(list((runtime / "src").iterdir()), [])
-                self.assertEqual([p.name for p in (runtime / "bin").iterdir()], ["qemu"])
+                self.assertEqual(sorted(p.name for p in (runtime / "bin").iterdir()),
+                                 ["boot.sh", "qemu", "rebuild_initramfs.sh"])
 
     def test_reject_invalid_destination(self):
         for args in ([], [""], [str(TOOLS)], [str(TOOLS.parent)]):

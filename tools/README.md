@@ -19,14 +19,16 @@ Run from the tutorial checkout, specifying your runtime workspace:
 ./tools/install.sh /home/doug/Kernel
 ```
 
-The installer creates the workspace layout and installs only `activate` and
-the `qemu` shim:
+The installer creates the workspace layout and installs the activation hook,
+QEMU shim, guest launcher, and initramfs build script:
 
 ```text
 LDD_ROOT/
 ├── activate
 ├── bin/
-│   └── qemu
+│   ├── qemu
+│   ├── boot.sh
+│   └── rebuild_initramfs.sh
 ├── src/
 ├── kernels/
 ├── initramfs/
@@ -34,9 +36,8 @@ LDD_ROOT/
 ```
 
 Existing directory contents are preserved. Rerunning the installer updates the
-two installed scripts. Source checkouts and build outputs are added later;
+installed scripts. Source checkouts and build outputs are added later;
 the installer does not create `src/qemu/build` before QEMU is cloned.
-The boot and initramfs scripts remain available for manual installation.
 It can be invoked from any working directory using its absolute path.
 
 Add the `source` line printed by the installer to `~/.bashrc` or `~/.zshrc`
@@ -47,6 +48,17 @@ or the initramfs, or modify the shell configuration.
 
 See [QEMU setup](../docs/02_getting_started/01_development_with_qemu.md)
 for build instructions and activation behavior.
+
+After entering the workspace with activation configured, run on the host:
+
+```bash
+rebuild_initramfs.sh
+boot.sh
+```
+
+The initramfs source tree must already be populated, and the kernel and QEMU
+must be built. The launcher uses the workspace's kernel, initramfs, and shared
+directory. See the patch status below before using the custom devices.
 
 ## Patch status
 
@@ -60,6 +72,7 @@ Run from the tutorial checkout:
 
 ```bash
 python3 tools/tests/test_install.py
+python3 tools/tests/test_boot.py
 python3 tools/tests/test_qemu_shim.py
 python3 tools/tests/test_activate.py
 bash -n tools/install.sh tools/activate tools/bin/qemu tools/bin/boot.sh tools/bin/rebuild_initramfs.sh

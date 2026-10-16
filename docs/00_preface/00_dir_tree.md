@@ -22,17 +22,17 @@ configured after cloning the tutorial repository.
 # List of directory
 
 ```
-tree -L 1 -d $LDD_ROOT
+tree -L 2 "$LDD_ROOT"
 
 ../../
 ├── activate                # Installed shell hook for this workspace.
 ├── bin                     # Installed shims and helper scripts.
-├── kernels                 # The dir containing Linux kernel sources.
-│   └── linux-5.10.4
+├── kernels                 # Created by the installer; unused by the current build.
 ├── initramfs               # Directory containing files to build initramfs image.
-├── shared                 # Directory shared with the guest through 9p over virtio.
+├── shared                  # Directory shared with the guest through 9p over virtio.
 │   └── Linux-Device-Driver # This is our example repo.
-└── src                     # Sources for locally built tools.
+└── src                     # Kernel and tool sources.
+    ├── linux-stable         # Linux 7.2.y sources and build artifacts.
     └── qemu                # QEMU sources and the build/ directory.
 ```
 
@@ -61,10 +61,9 @@ cd "$LDD_ROOT/shared/Linux-Device-Driver"
 ```
 
 See [workspace tools](../../tools/README.md) for the script inventory and checks.
-The installer currently installs only the qemu shim and activation hook;
+The installer installs the qemu shim, activation hook, boot.sh, and rebuild_initramfs.sh;
 it also creates bin, src, kernels, initramfs, and shared if missing, preserving
 their contents. Source trees and build outputs are added in later chapters.
-boot.sh and rebuild_initramfs.sh are not installed by this command.
 Repeat these commands after updating the scripts in the tutorial repository.
 Add the following line to `~/.bashrc` or `~/.zshrc`, using the absolute path
 to your workspace:

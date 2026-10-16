@@ -16,7 +16,8 @@ fi
 
 mkdir -p -- "$RUNTIME_DIR"/{bin,src,kernels,initramfs,shared}
 install -m 644 "$TOOLS_DIR/activate" "$RUNTIME_DIR/activate"
-install -m 755 "$TOOLS_DIR/bin/qemu" "$RUNTIME_DIR/bin/qemu"
+install -m 755 "$TOOLS_DIR/bin/qemu" "$TOOLS_DIR/bin/boot.sh" \
+    "$TOOLS_DIR/bin/rebuild_initramfs.sh" "$RUNTIME_DIR/bin/"
 
-printf 'Created workspace directories and installed activate and qemu shim in %s\n' "$RUNTIME_DIR"
+printf 'Created workspace directories and installed activate, qemu, boot.sh and rebuild_initramfs.sh in %s\n' "$RUNTIME_DIR"
 printf 'Add this line to ~/.bashrc or ~/.zshrc, then open a new shell:\nsource %q\n' "$RUNTIME_DIR/activate"
