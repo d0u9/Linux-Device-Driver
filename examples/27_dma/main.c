@@ -19,7 +19,7 @@ static struct pci_device_id ids[] = {
 };
 MODULE_DEVICE_TABLE(pci, ids);
 
-int dev_open(struct inode *inode, struct file *filp)
+static int dev_open(struct inode *inode, struct file *filp)
 {
 	filp->private_data = container_of(inode->i_cdev, struct irq_dev, cdev);
 
@@ -125,7 +125,7 @@ long dev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	return rv;
 }
 
-int dev_release(struct inode *inode, struct file *filp)
+static int dev_release(struct inode *inode, struct file *filp)
 {
 	pr_debug("%s() is invoked\n", __FUNCTION__);
 	return 0;
@@ -170,7 +170,6 @@ static void destroy_chrdev(struct irq_dev *irq_dev)
 
 static irqreturn_t irq_service(int irq, void *dev_id)
 {
-	struct irq_dev *irq_dev = (struct irq_dev*)(dev_id);
 	pr_debug("irq triggered: irq = %d\n", irq);
 
 	return IRQ_HANDLED;
@@ -267,7 +266,7 @@ fail:
 	return rv;
 }
 
-void exit_dma(struct irq_dev *irq_dev)
+static void exit_dma(struct irq_dev *irq_dev)
 {
 	if (irq_dev->dma_buf) {
 		dma_free_coherent(&irq_dev->pcidev->dev, DMA_SIZE,
@@ -276,7 +275,7 @@ void exit_dma(struct irq_dev *irq_dev)
 	}
 }
 
-int init_dma(struct irq_dev *irq_dev)
+static int init_dma(struct irq_dev *irq_dev)
 {
 	irq_dev->dma_buf = dma_alloc_coherent(&irq_dev->pcidev->dev, DMA_SIZE,
 					      &irq_dev->dma_addr, GFP_KERNEL);
@@ -324,11 +323,8 @@ static int probe(struct pci_dev *dev, const struct pci_device_id *id)
 	rv = pci_request_regions(dev, MODULE_NAME);
 	pr_err("ERROR pci_request_region: %d\n", rv);
 
-	rv = pci_set_dma_mask(dev, DMA_BIT_MASK(28));
-	pr_err("ERROR pci_set_dma_mask: %d\n", rv);
-
-	rv = pci_set_consistent_dma_mask(dev, DMA_BIT_MASK(28));
-	pr_err("ERROR  pci_set_consistent_dma_mask: %d\n", rv);
+	rv = dma_set_mask_and_coherent(&dev->dev, DMA_BIT_MASK(28));
+	pr_err("ERROR dma_set_mask_and_coherent: %d\n", rv);
 
 
 	rv = irq_alloc(irq_dev);
