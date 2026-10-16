@@ -17,7 +17,7 @@ static struct pci_device_id ids[] = {
 };
 MODULE_DEVICE_TABLE(pci, ids);
 
-int dev_open(struct inode *inode, struct file *filp)
+static int dev_open(struct inode *inode, struct file *filp)
 {
 	struct irq_dev *irq_dev;
 	irq_dev = container_of(inode->i_cdev, struct irq_dev, cdev);
@@ -27,7 +27,7 @@ int dev_open(struct inode *inode, struct file *filp)
 	return 0;
 }
 
-int dev_release(struct inode *inode, struct file *filp)
+static int dev_release(struct inode *inode, struct file *filp)
 {
 	pr_debug("%s() is invoked\n", __FUNCTION__);
 	return 0;
@@ -202,11 +202,8 @@ static int probe(struct pci_dev *dev, const struct pci_device_id *id)
 	rv = pci_request_regions(dev, MODULE_NAME);
 	pr_err("ERROR pci_request_region: %d\n", rv);
 
-	rv = pci_set_dma_mask(dev, DMA_BIT_MASK(64));
-	pr_err("ERROR pci_set_dma_mask: %d\n", rv);
-
-	rv = pci_set_consistent_dma_mask(dev, DMA_BIT_MASK(64));
-	pr_err("ERROR  pci_set_consistent_dma_mask: %d\n", rv);
+	rv = dma_set_mask_and_coherent(&dev->dev, DMA_BIT_MASK(64));
+	pr_err("ERROR dma_set_mask_and_coherent: %d\n", rv);
 
 
 	rv = irq_alloc(irq_dev);
