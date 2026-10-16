@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+set -e
+
+SCRIPTDIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+LDD_ROOT="$(cd -- "$SCRIPTDIR/.." && pwd)"
+QEMU="$LDD_ROOT/src/qemu/build/qemu-system-x86_64"
+
+if [ ! -x "$QEMU" ]; then
+    printf 'QEMU executable not found or not executable: %s\nBuild QEMU in the workspace src/qemu directory first.\n' "$QEMU" >&2
+    exit 127
+fi
+
+exec "$QEMU" "$@"

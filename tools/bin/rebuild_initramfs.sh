@@ -2,8 +2,7 @@
 
 set -e
 
-SCRIPTDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &> /dev/null && pwd)"
-export LDD_ROOT="$(cd "${SCRIPTDIR}"/.. && pwd)"
+: "${LDD_ROOT:?Enter the configured LDD workspace or export LDD_ROOT first.}"
 cd "$LDD_ROOT/initramfs"
 
 find . -print0 | cpio --null -ov --format=newc | gzip -9 > ../initramfs.cpio.gz

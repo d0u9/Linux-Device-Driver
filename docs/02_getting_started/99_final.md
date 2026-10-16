@@ -56,11 +56,10 @@ to prevent typing it each time.
 ```bash
 #!/bin/bash
 
-$LDD_ROOT/bin/qemu \
-   -net nic,model=e1000
+"$LDD_ROOT/bin/qemu" \
+   -net nic,model=e1000 \
    -net user,hostfwd=tcp::7023-:23 \
    -enable-kvm \
-   -vnc none \
    -m 512M \
    -kernel $LDD_ROOT/kernels/linux-5.10.4/arch/x86_64/boot/bzImage \
    -initrd $LDD_ROOT/initramfs.cpio.gz \

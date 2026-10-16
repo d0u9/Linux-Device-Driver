@@ -1,20 +1,7 @@
 #!/bin/bash
 
 KERNEL="5.16.19"
-MACHINE="x86_64"
-SCRIPTDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &> /dev/null && pwd)"
-export LDD_ROOT="${LDD_ROOT:-$(cd "${SCRIPTDIR}"/.. && pwd)}"
-
-QEMUPATH="${LDD_ROOT}/src/qemu/build/qemu-system-${MACHINE}"
-if [ -e "${QEMUPATH}" ]; then
-  if [ ! -e "${LDD_ROOT}/bin/qemu" ]; then
-    echo "Soft linking qemu to qemu-system-${MACHINE}"
-    ln -s "${QEMUPATH}" "${LDD_ROOT}/bin/qemu"
-  fi
-else  
-  echo "Failed to find QEMU executable at ${QEMUPATH}."
-  exit 1
-fi
+: "${LDD_ROOT:?Enter the configured LDD workspace or export LDD_ROOT first.}"
 
 INITRAMFS="$LDD_ROOT/initramfs.cpio.gz"
 
@@ -37,7 +24,7 @@ else
 fi
 
 
-${LDD_ROOT}/bin/qemu \
+"${LDD_ROOT}/bin/qemu" \
     -enable-kvm \
     -kernel "$KERNELPATH" \
     -initrd "$INITRAMFS" \

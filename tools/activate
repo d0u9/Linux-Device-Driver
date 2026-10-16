@@ -1,0 +1,66 @@
+# Source this file once from ~/.bashrc or ~/.zshrc to enable automatic activation.
+
+if [ -n "${BASH_VERSION:-}" ]; then
+    if [ "${BASH_SOURCE[0]}" = "$0" ]; then
+        printf 'Load the installed workspace hook with: source /path/to/ldd_root/activate\n' >&2
+        exit 1
+    fi
+elif [ -z "${ZSH_VERSION:-}" ]; then
+    printf 'LDD activation supports Bash and Zsh.\n' >&2
+    return 1
+fi
+
+# Keep a single set of hooks when the shell configuration is reloaded.
+if [ "${_LDD_HOOK_LOADED:-0}" = 1 ]; then
+    _ldd_refresh
+    return
+fi
+
+if [ -n "${ZSH_VERSION:-}" ]; then
+    _LDD_WORKSPACE_ROOT="$(cd -- "$(dirname -- "${(%):-%N}")" && pwd -P)"
+else
+    _LDD_WORKSPACE_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+fi
+
+_ldd_refresh() {
+    local previous_status=$?
+    local current_dir
+    current_dir="$(pwd -P)"
+    case "$current_dir/" in
+        "$_LDD_WORKSPACE_ROOT/"*)
+            if [ "${_LDD_ACTIVE:-0}" != 1 ]; then
+                _LDD_OLD_PATH="$PATH"
+                _LDD_OLD_ROOT_SET="${LDD_ROOT+x}"
+                _LDD_OLD_ROOT="${LDD_ROOT-}"
+                export LDD_ROOT="$_LDD_WORKSPACE_ROOT"
+                export PATH="$_LDD_WORKSPACE_ROOT/bin:$PATH"
+                _LDD_ACTIVE=1
+            fi
+            ;;
+        *)
+            if [ "${_LDD_ACTIVE:-0}" = 1 ]; then
+                export PATH="$_LDD_OLD_PATH"
+                if [ "$_LDD_OLD_ROOT_SET" = x ]; then
+                    export LDD_ROOT="$_LDD_OLD_ROOT"
+                else
+                    unset LDD_ROOT
+                fi
+                unset _LDD_ACTIVE _LDD_OLD_PATH _LDD_OLD_ROOT_SET _LDD_OLD_ROOT
+            fi
+            ;;
+    esac
+    return "$previous_status"
+}
+
+if [ -n "${ZSH_VERSION:-}" ]; then
+    autoload -Uz add-zsh-hook
+    add-zsh-hook chpwd _ldd_refresh
+else
+    # PROMPT_COMMAND can be a string or an array; preserve existing hooks.
+    case "$(declare -p PROMPT_COMMAND 2>/dev/null)" in
+        'declare -a'*) PROMPT_COMMAND=(_ldd_refresh "${PROMPT_COMMAND[@]}") ;;
+        *) PROMPT_COMMAND="_ldd_refresh${PROMPT_COMMAND:+$'\n'$PROMPT_COMMAND}" ;;
+    esac
+fi
+_LDD_HOOK_LOADED=1
+_ldd_refresh

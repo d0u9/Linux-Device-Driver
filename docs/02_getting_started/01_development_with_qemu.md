@@ -59,7 +59,7 @@ git submodule update --init --recursive
 
 The driver examples require a patch that adds custom emulated devices.
 
-> TODO: Port QEMU_LDD.patch to QEMU 11.1.2 and update the patch location
+> TODO: Port tools/patches/QEMU_LDD.patch to QEMU 11.1.2 and update the patch location
 > and application instructions. Verify that isa-kmod-edu, pci-kmod-edu,
 > and usb-kmod-edu are registered and that the corresponding driver examples work.
 
@@ -95,15 +95,36 @@ cd build
 make -j"$(nproc)"
 ```
 
-Installation is unnecessary; users can directly use the binary from the build
-directory through a symbolic link in `$LDD_ROOT/bin`:
+QEMU installation is unnecessary. Install the workspace scripts as described
+in the [workspace setup](../00_preface/00_dir_tree.md#install-the-workspace-scripts).
 
+The installed `$LDD_ROOT/bin/qemu` shim runs
+`$LDD_ROOT/src/qemu/build/qemu-system-x86_64` and forwards all arguments.
+It derives the workspace path from its own location and does not fall back
+to a system QEMU. The copy in the tutorial repository is the script source,
+not the runtime entry point.
+
+### Automatic environment activation
+
+The installed `$LDD_ROOT/activate` file provides the shell hooks. Add this line
+to `~/.bashrc` (Bash) or `~/.zshrc` (Zsh), using your workspace's absolute path:
+
+```bash
+source /path/to/your/ldd_root/activate
 ```
-mkdir -p "$LDD_ROOT/bin"
-cd "$LDD_ROOT/bin"
-ln -s ../src/qemu/build/qemu-system-x86_64 qemu
-export PATH="$LDD_ROOT/bin:$PATH"
-```
+
+Open a new shell after this one-time setup. Entering the workspace or any of
+its subdirectories sets `LDD_ROOT` and prepends `$LDD_ROOT/bin` to `PATH`.
+Thus `qemu` runs the installed shim, including when working in the tutorial
+checkout under `nfs_dir`. Leaving the workspace restores the saved `PATH`
+and `LDD_ROOT`; re-entering activates it again. No per-visit `source` command
+is needed. The tutorial checkout does not determine the activation boundary.
+
+Zsh updates the environment immediately after `cd`. Bash updates it before
+the next prompt, so use a separate command after `cd`, rather than
+`cd /path/to/workspace && qemu`. Existing shell hooks are preserved. This hook
+manages one workspace per shell and restores the saved PATH on exit, including
+discarding PATH changes made while active. It does not stop running processes.
 
 ## Test
 
@@ -111,7 +132,7 @@ When the building process finishes, run the command below to test if it works
 properly.
 
 ```
-qemu --version
+"$LDD_ROOT/bin/qemu" --version
 ```
 
 # ¶ The end

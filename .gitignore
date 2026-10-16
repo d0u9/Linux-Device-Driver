@@ -44,7 +44,6 @@
 qemu/
 kernel/
 kernels/
-bin/qemu
 initramfs/
 initramfs.cpio.gz
 nfs_dir/

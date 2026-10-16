@@ -35,7 +35,7 @@ In this example, we need two consoles in which we can perform read and write
 separately. You can use any remote login tools, such as ssh or telnet, to open
 another console. For users who followed my QEMU dev setup instruction, it
 should already successfully have a telnetd daemon running. For more details,
-check [the telnet server setup](../../02_getting_started/05_telnet_server.md) for
+check [the telnet server setup](../../docs/02_getting_started/05_telnet_server.md) for
 more details.
 
 After the kernel module is loaded successfully. Execute the following command

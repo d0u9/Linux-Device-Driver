@@ -4,6 +4,16 @@ Examples of Linux Device Drivers, currently for kernel 5.10.
 
 # NOTE: Apologies for the delay in maintaining this project, sincerely.
 
+# Repository layout
+
+- [`docs/`](docs/README.md): tutorial chapters, in reading order.
+- [`examples/`](examples/): kernel module examples and userspace test programs.
+- [`tools/`](tools/README.md): workspace scripts, QEMU patch, and tool tests.
+
+The tutorial checkout is separate from the runtime workspace (`LDD_ROOT`).
+Start with the [workspace setup](docs/00_preface/00_dir_tree.md) to create the
+workspace and install the helper scripts.
+
 # Before start
 
 The examples in this repo are compiled against Linux Kernel 5.10. Other versions
