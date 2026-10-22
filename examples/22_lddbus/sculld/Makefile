@@ -1,20 +1,9 @@
-
 ifneq ($(KERNELRELEASE),)
     ccflags-y := -DENABLE_DEBUG
     sculld-objs := main.o
     obj-m := sculld.o
+    CFLAGS_main.o := -DDEBUG -I$(src)/../
 else
-    KERNELDIR ?= /lib/modules/$(shell uname -r)/build
-    PWD := $(shell pwd)
-    EXTRA_SYMBOLS := $(PWD)/../Module.symvers
-
-.PHONY: modules
-modules:
-	$(MAKE) -C $(KERNELDIR) M=$(PWD) KBUILD_EXTRA_SYMBOLS=$(EXTRA_SYMBOLS) modules
+    EXTRA_SYMBOLS := $(CURDIR)/../Module.symvers
+    include ../../common.mk
 endif
-
-.PHONY: clean
-clean:
-	$(MAKE) -C $(KERNELDIR) M=$(PWD) clean
-
-CFLAGS_main.o := -DDEBUG -I$(src)/../

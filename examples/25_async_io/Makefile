@@ -2,17 +2,7 @@ ifneq ($(KERNELRELEASE),)
     ccflags-y := -DENABLE_DEBUG
     async_io-objs := main.o
     obj-m := async_io.o
+    CFLAGS_main.o := -DDEBUG
 else
-    KERNELDIR ?= /lib/modules/$(shell uname -r)/build
-    PWD := $(shell pwd)
-
-.PHONY: modules
-modules:
-	$(MAKE) -C $(KERNELDIR) M=$(PWD) modules
+    include ../common.mk
 endif
-
-.PHONY: clean
-clean:
-	$(MAKE) -C $(KERNELDIR) M=$(PWD) clean
-
-CFLAGS_main.o := -DDEBUG

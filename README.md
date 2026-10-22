@@ -37,6 +37,9 @@ source tree the drivers are built against.
 
 Driver examples are in [`examples/`](examples/). Numbered directories preserve
 the learning sequence; [`rbtree`](examples/rbtree/) is a supplemental example.
+Except for `01_hello_world`, which spells out the full double-entering Makefile,
+each example's Makefile holds only its kbuild lines and includes the shared
+[`examples/common.mk`](examples/common.mk) for the `modules` and `clean` targets.
 
 To build an example after setting `KERNELDIR`, enter its directory:
 

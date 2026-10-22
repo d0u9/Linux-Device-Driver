@@ -1,17 +1,7 @@
 ifneq ($(KERNELRELEASE),)
     module_parameters-objs := main.o
     obj-m := module_parameters.o
+    CFLAGS_main.o := -DDEBUG
 else
-    KERNELDIR ?= /lib/modules/$(shell uname -r)/build
-    PWD := $(shell pwd)
-
-.PHONY: modules
-modules:
-	$(MAKE) -C $(KERNELDIR) M=$(PWD) modules
+    include ../common.mk
 endif
-
-.PHONY: clean
-clean:
-	$(MAKE) -C $(KERNELDIR) M=$(PWD) clean
-
-CFLAGS_main.o := -DDEBUG
