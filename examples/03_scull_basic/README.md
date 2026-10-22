@@ -11,13 +11,13 @@ without consuming the stored data. Opening the device with `O_WRONLY` calls
 To build this module, execute:
 
 ```bash
-make KERNELDIR=/path/to/kernel/source/dir
+make KDIR=/path/to/kernel/source/dir
 ```
 
-If you have already set and exported `KERNELDIR` environment variable, simply
+If you have already set and exported `KDIR` environment variable, simply
 execute `make` is enough.
 
-If neither `KERNELDIR` environment variable nor `KERNELDIR` option of make
+If neither `KDIR` environment variable nor `KDIR` option of make
 are set, the current running kernel will be built against.
 
 ## Usage

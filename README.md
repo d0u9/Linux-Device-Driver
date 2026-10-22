@@ -23,11 +23,11 @@ Current test baseline:
 
 Other kernel versions and host distributions are not tested.
 
-Set `KERNELDIR` environment variable to the Linux kernel source dir, and export 
+Set `KDIR` environment variable to the Linux kernel source dir, and export 
 it to your local shell.
 
 ```bash
-export KERNELDIR=/path/to/kernel/source/
+export KDIR=/path/to/kernel/source/
 ```
 
 This environment variable is mainly used in Makefile to determine which kernel
@@ -41,7 +41,7 @@ Except for `01_hello_world`, which spells out the full double-entering Makefile,
 each example's Makefile holds only its kbuild lines and includes the shared
 [`examples/common.mk`](examples/common.mk) for the `modules` and `clean` targets.
 
-To build an example after setting `KERNELDIR`, enter its directory:
+To build an example after setting `KDIR`, enter its directory:
 
 ```bash
 cd examples/01_hello_world

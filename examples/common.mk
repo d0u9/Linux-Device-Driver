@@ -6,13 +6,13 @@
 # Optional variables set by the including Makefile:
 #   EXTRA_SYMBOLS  Module.symvers of modules this one depends on.
 
-KERNELDIR ?= /lib/modules/$(shell uname -r)/build
+KDIR ?= /lib/modules/$(shell uname -r)/build
 
 .PHONY: modules
 modules:
-	$(MAKE) -C $(KERNELDIR) M=$(CURDIR) \
+	$(MAKE) -C $(KDIR) M=$(CURDIR) \
 		$(if $(EXTRA_SYMBOLS),KBUILD_EXTRA_SYMBOLS=$(EXTRA_SYMBOLS)) modules
 
 .PHONY: clean
 clean:
-	$(MAKE) -C $(KERNELDIR) M=$(CURDIR) clean
+	$(MAKE) -C $(KDIR) M=$(CURDIR) clean

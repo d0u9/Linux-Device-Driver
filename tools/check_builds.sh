@@ -1,20 +1,20 @@
 #!/usr/bin/env bash
 # Build every example (kernel modules and userspace tests) against one kernel tree.
-# Usage: tools/check_builds.sh [KERNELDIR] [EXAMPLE...]
+# Usage: tools/check_builds.sh [KDIR] [EXAMPLE...]
 set -u
 
 if [ -n "${1:-}" ]; then
-    KERNELDIR="$1"
+    KDIR="$1"
     shift
 else
     : "${LDD_ROOT:?Pass a kernel tree path or export LDD_ROOT first.}"
-    KERNELDIR="$LDD_ROOT/src/linux-stable"
+    KDIR="$LDD_ROOT/src/linux-stable"
 fi
-if [ ! -f "$KERNELDIR/Makefile" ]; then
-    printf 'Not a kernel tree: %s\n' "$KERNELDIR" >&2
+if [ ! -f "$KDIR/Makefile" ]; then
+    printf 'Not a kernel tree: %s\n' "$KDIR" >&2
     exit 2
 fi
-KERNELDIR="$(cd -- "$KERNELDIR" && pwd -P)"
+KDIR="$(cd -- "$KDIR" && pwd -P)"
 
 EXAMPLES="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../examples" && pwd -P)"
 # Build in a scratch copy so the checkout stays clean.
@@ -47,7 +47,7 @@ for name in "${names[@]}"; do
         dir="$(dirname -- "$makefile")"
         rel="${dir#"$WORK"/}"
         count=$((count + 1))
-        if log="$(make -C "$dir" KERNELDIR="$KERNELDIR" 2>&1)"; then
+        if log="$(make -C "$dir" KDIR="$KDIR" 2>&1)"; then
             printf 'PASS %s\n' "$rel"
         else
             printf 'FAIL %s\n%s\n' "$rel" "$log"
@@ -56,6 +56,6 @@ for name in "${names[@]}"; do
     done < <(find "$WORK/$name" -name Makefile | LC_ALL=C sort)
 done
 
-printf '\n%d built, %d failed against %s\n' "$((count - ${#failed[@]}))" "${#failed[@]}" "$KERNELDIR"
+printf '\n%d built, %d failed against %s\n' "$((count - ${#failed[@]}))" "${#failed[@]}" "$KDIR"
 for name in ${failed[@]+"${failed[@]}"}; do printf '  %s\n' "$name"; done
 [ "${#failed[@]}" -eq 0 ]
