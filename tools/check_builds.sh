@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Build every example (kernel modules and userspace tests) against one kernel tree.
+# Build every example (kernel modules and userspace tests) against one kernel tree
+# through the top-level examples/Makefile, in parallel.
 # Usage: tools/check_builds.sh [KDIR] [EXAMPLE...]
 set -u
 
@@ -22,40 +23,26 @@ WORK="$(mktemp -d "${TMPDIR:-/tmp}/ldd-build.XXXXXX")"
 trap 'rm -rf -- "$WORK"' EXIT
 cp -R -- "$EXAMPLES/." "$WORK/"
 
-if [ "$#" -gt 0 ]; then
-    names=("$@")
-else
-    names=()
-    # Unfinished examples are skipped unless named explicitly.
-    for dir in "$WORK"/*/; do
-        case "$dir" in *_NOT_COMPLETE/) continue ;; esac
-        names+=("$(basename -- "$dir")")
-    done
-fi
-
+targets=()
 failed=()
-count=0
-for name in "${names[@]}"; do
-    if [ ! -d "$WORK/$name" ]; then
+for name in "$@"; do
+    if [ -d "$WORK/$name" ]; then
+        targets+=("$name")
+    else
         printf 'No such example: %s\n' "$name" >&2
-        count=$((count + 1))
         failed+=("$name")
-        continue
     fi
-    # Sorted, so a module builds before subdirectories that use its Module.symvers.
-    while IFS= read -r makefile; do
-        dir="$(dirname -- "$makefile")"
-        rel="${dir#"$WORK"/}"
-        count=$((count + 1))
-        if log="$(make -C "$dir" KDIR="$KDIR" 2>&1)"; then
-            printf 'PASS %s\n' "$rel"
-        else
-            printf 'FAIL %s\n%s\n' "$rel" "$log"
-            failed+=("$rel")
-        fi
-    done < <(find "$WORK/$name" -name Makefile | LC_ALL=C sort)
 done
+# With no names, the top-level Makefile builds every finished example.
+if [ "$#" -eq 0 ] || [ "${#targets[@]}" -gt 0 ]; then
+    # -k keeps going past failures; -O keeps each directory's log together.
+    make -C "$WORK" -k -O -j"$(nproc)" --no-print-directory \
+        KDIR="$KDIR" ${targets[@]+"${targets[@]}"} 2>&1 | grep -E -v '^make(\[[0-9]+\])?: '
+fi | tee "$WORK/.log"
 
-printf '\n%d built, %d failed against %s\n' "$((count - ${#failed[@]}))" "${#failed[@]}" "$KDIR"
+passed=$(grep -c '^PASS ' "$WORK/.log")
+while read -r _ rel; do failed+=("$rel"); done < <(grep '^FAIL ' "$WORK/.log")
+
+printf '\n%d built, %d failed against %s\n' "$passed" "${#failed[@]}" "$KDIR"
 for name in ${failed[@]+"${failed[@]}"}; do printf '  %s\n' "$name"; done
 [ "${#failed[@]}" -eq 0 ]

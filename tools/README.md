@@ -77,9 +77,12 @@ and userspace test against one configured, prepared kernel tree:
 ```
 
 Examples are built in a temporary copy, so the checkout stays clean. The script
-prints `PASS`/`FAIL` per directory, the build log for each failure, and exits
+runs the top-level `examples/Makefile` with `make -k -O -j$(nproc)`, prints
+`PASS`/`FAIL` per directory, the build log for each failure, and exits
 non-zero if any build fails. Unfinished `*_NOT_COMPLETE` examples are
-skipped unless named explicitly. The kernel tree path must not contain spaces.
+skipped unless named explicitly. A directory whose dependency failed (for
+example `22_lddbus/sculld` after `22_lddbus`) is not built and not counted.
+The kernel tree path must not contain spaces.
 
 ## Check the scripts
 

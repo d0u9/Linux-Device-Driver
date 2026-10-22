@@ -48,6 +48,12 @@ cd examples/01_hello_world
 make
 ```
 
+To build every finished example at once, in parallel, from the repository root:
+
+```bash
+make -C examples -j"$(nproc)"
+```
+
 # Introduction
 
 This repo demonstrates basic examples of Linux Device Driver(LDD) for
