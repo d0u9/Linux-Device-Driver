@@ -39,11 +39,4 @@
 .tmp_versions
 *.swp
 *.mod
-
-# ignore directories created underneath for builds
-qemu/
-kernel/
-kernels/
-initramfs/
-initramfs.cpio.gz
-shared/
+*.o.d
