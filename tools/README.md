@@ -58,13 +58,13 @@ boot.sh
 
 The initramfs source tree must already be populated, and the kernel and QEMU
 must be built. The launcher uses the workspace's kernel, initramfs, and shared
-directory. See the patch status below before using the custom devices.
+directory. See the custom device status below before using them.
 
-## Patch status
+## Custom device status
 
-[`patches/QEMU_LDD.patch`](patches/QEMU_LDD.patch) contains the custom QEMU
-devices. Porting it to QEMU 11.1.2 is still pending; `boot.sh` requires those
-devices and cannot run with an unpatched QEMU build.
+[`qemu/`](qemu/README.md) contains the sources of the custom QEMU devices.
+Porting them to QEMU 11.1.2 is still pending; `boot.sh` requires those
+devices and cannot run with a stock QEMU build.
 
 ## Build all examples
 

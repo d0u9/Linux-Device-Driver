@@ -59,8 +59,8 @@ git submodule update --init --recursive
 
 The driver examples require a patch that adds custom emulated devices.
 
-> TODO: Port tools/patches/QEMU_LDD.patch to QEMU 11.1.2 and update the patch location
-> and application instructions. Verify that isa-kmod-edu, pci-kmod-edu,
+> TODO: Port the device sources in tools/qemu/ to QEMU 11.1.2 and update the
+> instructions for adding them to the QEMU tree. Verify that isa-kmod-edu, pci-kmod-edu,
 > and usb-kmod-edu are registered and that the corresponding driver examples work.
 
 Until this is complete, an unpatched build can boot a guest but cannot run
