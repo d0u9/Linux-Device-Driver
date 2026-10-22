@@ -4,3 +4,7 @@ LIBRT_STATIC_LIB := /usr/lib64/librt.a
 .PHONY: all
 all:
 	gcc --static -o async_notify.out async_notify.c $(LIBRT_STATIC_LIB) $(PTHREAD_STATIC_LIB)
+
+.PHONY: clean
+clean:
+	rm -f async_notify.out
