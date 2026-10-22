@@ -8,7 +8,7 @@ else
     PWD := $(shell pwd)
     EXTRA_SYMBOLS := $(PWD)/../Module.symvers
 
-.PHONY: clean
+.PHONY: modules
 modules:
 	$(MAKE) -C $(KERNELDIR) M=$(PWD) KBUILD_EXTRA_SYMBOLS=$(EXTRA_SYMBOLS) modules
 endif

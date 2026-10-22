@@ -1,6 +1,7 @@
 BIN_CLIENT = client.out
 BIN_SERVER = server.out
 
+.PHONY: all
 all:
 	gcc -I../ -static -o $(BIN_CLIENT) client.c
 	gcc -I../ -static -o $(BIN_SERVER) server.c
