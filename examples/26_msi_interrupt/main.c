@@ -66,6 +66,7 @@ static int create_chrdev(struct irq_dev *irq_dev)
 
 static void destroy_chrdev(struct irq_dev *irq_dev)
 {
+	cdev_del(&irq_dev->cdev);
 	unregister_chrdev_region(irq_dev->devno, 1);
 }
 
@@ -97,6 +98,7 @@ static int irq_alloc(struct irq_dev *irq_dev)
 		return nvec;
 	}
 	pr_debug("irq vec number = %d\n", nvec);
+	irq_dev->irq_nr = nvec;
 
 	for (i = 0; i < nvec; i++) {
 		irq = pci_irq_vector(irq_dev->pcidev, i);
@@ -106,8 +108,6 @@ static int irq_alloc(struct irq_dev *irq_dev)
 			goto fail;
 		irq_dev->irqs[i] = irq;
 	}
-
-	irq_dev->irq_nr = nvec;
 
 	return 0;
 fail:
@@ -137,6 +137,9 @@ static int map_single_bar(struct irq_dev *irq_dev, int idx)
 	}
 
 	bar_addr = pci_iomap(irq_dev->pcidev, idx, bar_len);
+	if (!bar_addr)
+		return -ENOMEM;
+
 	pr_info("BAR%d at 0x%llx mapped at 0x%px, length=%llu(/%llx)\n", idx,
 		(u64)bar_start, bar_addr, (u64)bar_len, (u64)bar_len);
 
@@ -155,7 +158,7 @@ static int map_bars(struct irq_dev *irq_dev)
 		if (bar_len == 0) {
 			continue;
 		} else if (bar_len < 0) {
-			rv = -EINVAL;
+			rv = bar_len;
 			goto fail;
 		}
 	}
@@ -189,9 +192,17 @@ static int probe(struct pci_dev *dev, const struct pci_device_id *id)
 	irq_dev = kzalloc(sizeof(struct irq_dev), GFP_KERNEL);
 	if (!irq_dev) {
 		pr_err("Allocate memory for 'struct irq_dev' failed!\n");
-		return -ENOMEM;
+		rv = -ENOMEM;
+		goto alloc_err;
 	}
 	irq_dev->pcidev = dev;
+	dev_set_drvdata(&dev->dev, irq_dev);
+
+	rv = pci_request_regions(dev, MODULE_NAME);
+	if (rv) {
+		dev_err(&dev->dev, "can't request regions\n");
+		goto request_regions_err;
+	}
 
 	rv = map_bars(irq_dev);
 	if (rv < 0) {
@@ -199,12 +210,11 @@ static int probe(struct pci_dev *dev, const struct pci_device_id *id)
 		goto map_bars_err;
 	}
 
-	rv = pci_request_regions(dev, MODULE_NAME);
-	pr_err("ERROR pci_request_region: %d\n", rv);
-
 	rv = dma_set_mask_and_coherent(&dev->dev, DMA_BIT_MASK(64));
-	pr_err("ERROR dma_set_mask_and_coherent: %d\n", rv);
-
+	if (rv) {
+		dev_err(&dev->dev, "can't set DMA mask\n");
+		goto dma_mask_err;
+	}
 
 	rv = irq_alloc(irq_dev);
 	if (rv < 0) {
@@ -218,16 +228,20 @@ static int probe(struct pci_dev *dev, const struct pci_device_id *id)
 		goto create_chrdev_err;
 	}
 
-	dev_set_drvdata(&dev->dev, irq_dev);
-
 	return 0;
 
 create_chrdev_err:
-	unmap_bars(irq_dev);
-map_bars_err:
 	irq_free(irq_dev);
 irq_err:
+dma_mask_err:
+	unmap_bars(irq_dev);
+map_bars_err:
+	pci_release_regions(dev);
+request_regions_err:
+	dev_set_drvdata(&dev->dev, NULL);
 	kfree(irq_dev);
+alloc_err:
+	pci_disable_device(dev);
 	return rv;
 }
 
@@ -240,9 +254,9 @@ static void remove(struct pci_dev *dev)
 	irq_free(irq_dev);
 	unmap_bars(irq_dev);
 	pci_release_regions(dev);
-	kfree(irq_dev);
-
 	dev_set_drvdata(&dev->dev, NULL);
+	kfree(irq_dev);
+	pci_disable_device(dev);
 }
 
 static struct pci_driver pci_driver = {

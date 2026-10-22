@@ -92,6 +92,7 @@ static int probe(struct pci_dev *dev, const struct pci_device_id *id)
 	rv = map_bars(dev);
 	if (rv < 0) {
 		dev_err(&dev->dev, "can't map bars\n");
+		pci_disable_device(dev);
 		return rv;
 	}
 
@@ -100,7 +101,7 @@ static int probe(struct pci_dev *dev, const struct pci_device_id *id)
 
 static void remove(struct pci_dev *dev)
 {
-
+	pci_disable_device(dev);
 }
 
 static struct pci_driver pci_driver = {
