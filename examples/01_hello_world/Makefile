@@ -1,7 +1,6 @@
 ifneq ($(KERNELRELEASE),)
 
 # In kbuild context
-module-objs := hello_world.o
 obj-m := hello_world.o
 
 CFLAGS_hello_world.o := -DDEBUG
