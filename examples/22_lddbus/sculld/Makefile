@@ -1,6 +1,6 @@
 
 ifneq ($(KERNELRELEASE),)
-    ccflags-y := -std=gnu99 -DENABLE_DEBUG
+    ccflags-y := -DENABLE_DEBUG
     sculld-objs := main.o
     obj-m := sculld.o
 else
@@ -17,4 +17,4 @@ endif
 clean:
 	$(MAKE) -C $(KERNELDIR) M=$(PWD) clean
 
-CFLAGS_main.o := -DDEBUG -I$M/../
+CFLAGS_main.o := -DDEBUG -I$(src)/../

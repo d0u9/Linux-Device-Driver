@@ -1,5 +1,5 @@
 ifneq ($(KERNELRELEASE),)
-    ccflags-y := -std=gnu99 -DENABLE_DEBUG
+    ccflags-y := -DENABLE_DEBUG
     lddbus-objs := main.o
     obj-m := lddbus.o
 else

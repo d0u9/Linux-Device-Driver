@@ -1,5 +1,4 @@
 ifneq ($(KERNELRELEASE),)
-    ccflags-y := -std=gnu99
     module_parameters-objs := main.o
     obj-m := module_parameters.o
 else

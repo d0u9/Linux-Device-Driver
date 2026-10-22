@@ -1,5 +1,5 @@
 ifneq ($(KERNELRELEASE),)
-    ccflags-y := -std=gnu99 -DENABLE_DEBUG
+    ccflags-y := -DENABLE_DEBUG
     proc_fs_iterator-objs := main.o fops.o
     obj-m := proc_fs_iterator.o
 else

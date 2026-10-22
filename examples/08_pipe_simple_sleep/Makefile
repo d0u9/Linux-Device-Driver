@@ -1,5 +1,5 @@
 ifneq ($(KERNELRELEASE),)
-    ccflags-y := -std=gnu99 -DENABLE_DEBUG
+    ccflags-y := -DENABLE_DEBUG
     pipe_simple_sleep-objs := main.o fops.o
     obj-m := pipe_simple_sleep.o
 else
