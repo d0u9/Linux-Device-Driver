@@ -4,8 +4,8 @@ BIN2 := fault.out
 
 .PHONY: all
 all:
-	gcc -static -o $(BIN1) remap.c
-	gcc -static -o $(BIN2) fault.c
+	$(CC) -static -o $(BIN1) remap.c
+	$(CC) -static -o $(BIN2) fault.c
 
 .PHONY: clean
 clean:

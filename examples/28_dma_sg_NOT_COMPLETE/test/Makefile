@@ -2,7 +2,7 @@ BIN = dma.out
 
 .PHONY: all
 all:
-	gcc -I../ -static -o $(BIN) main.c
+	$(CC) -I../ -static -o $(BIN) main.c
 
 .PHONY: clean
 clean:
