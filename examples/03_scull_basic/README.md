@@ -50,7 +50,7 @@ previously wrote into are extracted. `dmesg | tail -10` will look like:
 [ 4000.317279] scull: scull_read() is invoked
 [ 4000.317286] scull: RD pos = 12, block = 0, offset = 0, read 12 bytes
 [ 4000.317622] scull: scull_read() is invoked
-[ 4000.317624] scull: RD pos = 12, block = 0, offset = 12, read 65536 bytes
+[ 4000.317624] scull: RD pos = 12, block = 0, offset = 12, read 0 bytes
 [ 4000.317634] scull: scull_release() is invoked
 ```
 
