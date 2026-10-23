@@ -1,19 +1,31 @@
 # seeking
 
-Seeking method is used to reposition read/write offset of the opened file.
-Obviously, not all the char devices need to implement this method. For example,
-the keyboard device is one of this sort which can not be repositioned. The
-seeking method is easy to implement, driver designer is free to choose the
-appropriate meaning of the position to their devices. For example, use the
-device block as the basic unit to offset, instead of byte.
+The `llseek` method repositions the read/write offset of an open file. Not
+every char device needs it; a keyboard, for example, has no position to move
+to. When a device does have positions, the driver is free to choose what a
+position means, for example a block instead of a byte.
 
-Here, in this example, we create a simple char device file named "seeking" in
-`/dev` directory. It has an internal buffer containing a DEC-HEX table, which
-can be used to convert decimal number to its hex counterpart. Read the
-different position of this device file can get the hex format number
-accordingly. For example, read one byte from the position of 10 from the device
-file, a char of `A` is returned. Read after position of 15, for example 16,
-will cause the position cursor wrapping around.
+In this example, we create a char device named `/dev/seeking`. Its content is
+the 16-byte table `0123456789ABCDEF`, so the byte at position N is N written
+in hex: reading one byte at position 10 returns `A`. Positions wrap around
+the table: position 16 is the same as 0, and reading past the last entry
+continues from the start.
+
+`seeking_llseek()` computes the new position from `whence`:
+
+- `SEEK_SET`: `off`
+- `SEEK_CUR`: the current position plus `off`
+- `SEEK_END`: the table size (16) plus `off`, so `-1` means the last entry
+
+A negative result is rejected with `-EINVAL`; anything else is taken modulo
+16. `read()` also checks its position itself, because `pread()` passes an
+offset straight to it without going through `llseek`.
+
+A device with a fixed size and no wrapping can use the kernel's helpers
+instead of writing `llseek` by hand: `fixed_size_llseek()` handles all three
+`whence` values and rejects positions outside the device, and
+`no_seek_end_llseek()` does the same but refuses `SEEK_END`, and
+`default_llseek()` covers a plain byte position.
 
 ## build the module
 
@@ -43,11 +55,10 @@ sh load_module.sh
 In the **test** directory, we write a simple test program to test the
 functionality of the kernel driver.
 
-Build and copy the binary file to the target machine, run the test program
-in terminal to check the output.
+Build it with `make` and run `./seek.out` on the target machine.
 
-In this test program, we read the device file from offset 15 to offset 0, one
-byte per read, and print the char to the terminal:
+The test program reads the device from offset 15 down to 0, one byte per
+read, then checks `SEEK_END`, wrapping and a negative position:
 
 ```
 15(dec) = F(hex)
@@ -66,6 +77,9 @@ byte per read, and print the char to the terminal:
 2(dec) = 2(hex)
 1(dec) = 1(hex)
 0(dec) = 0(hex)
+SEEK_END -1 = F
+SEEK_SET 26 = A
+SEEK_SET -1 fails: Invalid argument
 ```
 
 ---

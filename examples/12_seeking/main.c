@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-2.0
+#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
+
 #include <linux/init.h>
 #include <linux/module.h>
 #include <linux/kernel.h>
@@ -8,70 +11,60 @@
 #include "main.h"
 #include "fops.h"
 
-static int seeking_major = 0, seeking_minor = 0;
-static struct seeking_dev *seeking_dev = NULL;
+static dev_t seeking_devno;
+static struct seeking_dev *seeking_dev;
 
-static struct file_operations fops = {
+static const struct file_operations fops = {
 	.owner  = THIS_MODULE,
 	.open   = seeking_open,
 	.read   = seeking_read,
 	.llseek = seeking_llseek,
 };
 
-static
-int __init m_init(void)
+static int __init m_init(void)
 {
-	dev_t devno;
-	int err = 0;
+	int err;
 
-	printk(KERN_WARNING MODULE_NAME " is loaded\n");
+	pr_info("loaded\n");
 
-	seeking_dev = kmalloc(sizeof(struct seeking_dev), GFP_KERNEL);
-	if (!seeking_dev) {
-		pr_debug("Cannot malloc memeory!\n");
+	seeking_dev = kzalloc_obj(*seeking_dev);
+	if (!seeking_dev)
 		return -ENOMEM;
-	}
-	memset(seeking_dev, 0, sizeof(struct seeking_dev));
 
-	err = alloc_chrdev_region(&devno, seeking_minor, SEEKING_DEV_NR, MODULE_NAME);
-	if (err < 0) {
-		pr_debug("Can't get major!\n");
-		goto on_error;
-	}
-	seeking_major = MAJOR(devno);
-
-	// we initialize the internal buffer with DEC-HEX table.
+	/* initialize the internal buffer with the DEC-HEX table */
 	memcpy(seeking_dev->buff, HEX_DICT, HEX_DICT_LEN);
 	mutex_init(&seeking_dev->mutex);
 	cdev_init(&seeking_dev->cdev, &fops);
 	seeking_dev->cdev.owner = THIS_MODULE;
 
-	devno = MKDEV(seeking_major, seeking_minor);
-	err = cdev_add(&seeking_dev->cdev, devno, 1);
+	err = alloc_chrdev_region(&seeking_devno, 0, SEEKING_DEV_NR,
+				  MODULE_NAME);
+	if (err < 0) {
+		pr_err("can't get major number: %d\n", err);
+		goto err_free;
+	}
+
+	err = cdev_add(&seeking_dev->cdev, seeking_devno, SEEKING_DEV_NR);
 	if (err) {
-		pr_debug("Cannot add %s\n", MODULE_NAME);
-		goto on_error;
+		pr_err("adding %s failed: %d\n", MODULE_NAME, err);
+		goto err_unregister;
 	}
 
 	return 0;
 
-on_error:
+err_unregister:
+	unregister_chrdev_region(seeking_devno, SEEKING_DEV_NR);
+err_free:
 	kfree(seeking_dev);
 	return err;
 }
 
-static
-void __exit m_exit(void)
+static void __exit m_exit(void)
 {
-	dev_t devno;
-
-	printk(KERN_WARNING MODULE_NAME " unloaded\n");
+	pr_info("unloaded\n");
 
 	cdev_del(&seeking_dev->cdev);
-
-	devno = MKDEV(seeking_major, seeking_minor);
-	unregister_chrdev_region(devno, SEEKING_DEV_NR);
-
+	unregister_chrdev_region(seeking_devno, SEEKING_DEV_NR);
 	kfree(seeking_dev);
 }
 

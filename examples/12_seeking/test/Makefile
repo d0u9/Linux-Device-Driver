@@ -1,6 +1,6 @@
 .PHONY: all
 all:
-	$(CC) --static -std=gnu99 -o seek.out seek.c
+	$(CC) -static -o seek.out seek.c
 
 .PHONY: clean
 clean:
