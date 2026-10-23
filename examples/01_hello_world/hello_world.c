@@ -1,14 +1,15 @@
+// SPDX-License-Identifier: GPL-2.0
 #include <linux/module.h>
 
 static int __init m_init(void)
 {
-	printk(KERN_ALERT "Hello, world!\n");
+	printk(KERN_INFO "Hello, world!\n");
 	return 0;
 }
 
 static void __exit m_exit(void)
 {
-	printk(KERN_ALERT "Bye, world!\n");
+	printk(KERN_INFO "Bye, world!\n");
 }
 
 module_init(m_init);

@@ -32,7 +32,7 @@ Inspect the result by running:
 ```bash
 dmesg | tail -10
 ```
-At the very end of the output, a `Hello World` message will be seen.
+At the very end of the output, a `Hello, world!` message will be seen.
 
 ## remove the module
 
@@ -43,7 +43,7 @@ release all the resources it occupied.
 rmmod hello_world
 ```
 
-Run `dmesg | tail -10` again, message `Bye, world` can be seen. The exit
+Run `dmesg | tail -10` again, message `Bye, world!` can be seen. The exit
 function is executed properly.
 
 ---

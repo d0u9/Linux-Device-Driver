@@ -10,17 +10,18 @@ userspace.
 The code is pretty simple:
 
 ```C
+// SPDX-License-Identifier: GPL-2.0
 #include <linux/module.h>
 
 static int __init m_init(void)
 {
-	printk(KERN_ALERT "Hello, world!\n");
+	printk(KERN_INFO "Hello, world!\n");
 	return 0;
 }
 
 static void __exit m_exit(void)
 {
-	printk(KERN_ALERT "Bye, world!\n");
+	printk(KERN_INFO "Bye, world!\n");
 }
 
 module_init(m_init);
@@ -50,6 +51,16 @@ the suffix 'k' stands for the kernel. Knowing the difference between `printf()`
 in userspace and `printk()` in kernelspace has no contribution to our
 understanding of how to load and unload a module. So, we skip the details here
 and give more dives later.
+
+`KERN_INFO` in front of the string is the message's log level. Real drivers
+rarely call `printk()` with a level by hand; they use the shorthand macros
+such as `pr_info()`, `pr_warn()` and `pr_err()`, which expand to exactly that.
+A driver that has a `struct device` at hand prefers `dev_info()` and friends,
+which prefix the message with the device's name.
+
+The first line, `// SPDX-License-Identifier: GPL-2.0`, states the source
+file's license in a machine-readable form. Every file in the kernel tree
+starts with such a line.
 
 Programming interfaces exported by the kernel are scattered in a set or a
 single header file. According to the resources the device driver requests, the
