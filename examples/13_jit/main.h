@@ -1,24 +1,21 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _MAIN_H
 #define _MAIN_H
 
 #define MODULE_NAME	"jit"
-#define PROC_FILE_NR		8
 
 /* use these as data pointers, to implement four files in one function */
 enum jit_files {
 	JIT_BUSY,
 	JIT_SCHED,
 	JIT_QUEUE,
-	JIT_SCHEDTO
+	JIT_SCHEDTO,
 };
 
-struct opt {
-	int (*show)(struct seq_file *m, void *p);
-	void *args;
+/* data pointers of jit_bh(): which BH workqueue to use */
+enum jit_bh_prio {
+	JIT_BH_NORMAL,		/* was a tasklet */
+	JIT_BH_HIGHPRI,		/* was a high priority tasklet */
 };
-
-extern int delay;
-extern int tdelay;
 
 #endif
-

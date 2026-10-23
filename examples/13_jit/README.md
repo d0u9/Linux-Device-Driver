@@ -1,17 +1,14 @@
 # jit
 
-How to measure time in the Kernel? How to delay a specific time period in the
-Kernel? Time is very essential to software. The entire Kernel and related
-functions are propelled by time, the timer device hardware interrupts the Kernel
-periodically to spur the Kernel running.
+How do you measure time in the kernel, and how do you delay for a given
+period? The timer hardware interrupts the kernel periodically, and much of
+the kernel is driven by those ticks. Drivers often need to read the current
+time, measure an elapsed time, or delay some work.
 
-To driver developers, how to get the current time, how to measure the elapsed
-time, how to delay the execution of a specific task is common cases.
-
-In this example, we implement a simple driver which exports files in the root
-of **/proc** filesystem. Reads to each of these files will get current time of
-kernel, or delay a short period which may delay the read process of the whole
-kernel.
+This example creates eight read-only files in the root of **/proc**. Reading
+each one either prints the current time or delays for a while using a
+different method. The files are created with `proc_create_single_data()`, so
+each one only needs a `show` function.
 
 ## build the module
 
@@ -41,76 +38,87 @@ or
 insmod jit.ko delay=TICK_NUMBER
 ```
 
+`delay` (default `HZ`, one second) sets the delay of the `jit*` files in
+jiffies.
+
 ## test the module
 
-This driver export 8 files in the **/proc** filesystem after it is loaded.
+The driver creates eight files in **/proc**.
 
 1. **currentime**
-
-   Read to this file will get four values:
 
    ```
    0x1039ec6e9 0x00000001039ec6e9 1503534097.257556
                                1503534097.256700783
    ```
 
-   The first value is the value of `jiffies` variable, which is a 32bit
-   unsigned number. The second value the 64bit version of jiffies, which can
-   be obtained by `get_jiffies_64()` function. Any directly use of 64bit
-   jiffies is not recommended.
+   - `jiffies`, an `unsigned long` tick counter.
+   - `get_jiffies_64()`, the 64-bit counter. Read it through this function;
+     on 32-bit machines a direct read is not atomic.
+   - `ktime_get_real_ts64()`, the wall-clock time with high resolution,
+     printed here in microseconds.
+   - `ktime_get_coarse_real_ts64()`, the same clock at tick resolution, but
+     cheaper to read.
 
-   The third value obtained via `do_gettimeofday()`, which is similar to the
-   `gettimeofday()` function in userspace. This function has a near microsecond
-   resolution, because it asks the timing hardware what fraction of the current
-   jiffy has already elapsed.
-
-   The fourth value is returned by `current_kernel_time()`, almost the same as
-   `do_gettimeofday()` but in different of data type.
+   `tv_sec` is a 64-bit `time64_t`; never cast it to `int`, or it overflows in
+   2038. Older kernels had `do_gettimeofday()` and `current_kernel_time()`,
+   which were removed because of that problem.
 
 2. **jitbusy**
 
-   Any read to this file will cause the system to pause for a period which is
-   designated by `delay` variable. The under layer implementation uses
-   `cpu_relax()` function in a busy loop to fulfil this delay purpose. However,
-   the `cpu_relax()` function actually does nothing but insert `nop`
-   instructions, so this approach should definitely be avoided whenever
-   possible.
+   Busy-waits with `cpu_relax()` until `delay` jiffies have passed. The CPU is
+   kept busy the whole time, so avoid this except for very short delays.
 
 3. **jitsched**
 
-   Read to this file will block the current read process for a period. Also the
-   length of delay can be designated by `delay` variable. The under layer
-   implementation in this example is that the process voluntarily yield the CPU.
-   The process is still in the running queue, which can be scheduled again.
+   Calls `schedule()` in a loop until the time has passed. The process stays
+   runnable and only lets other processes run first.
 
 4. **jitqueue**
 
-   In this delay implementation, we resort to wait queue. We first create and
-   initialize a wait queue header. Then we add the current process to this
-   queue by invoking `wait_event_timeout()` or `wait_event_interruptible_timeout()`
-   functions. These two functions all have a parameter which indicates how
-   long to wait before timeout.
+   Sleeps on a wait queue with `wait_event_interruptible_timeout()`. Nobody
+   wakes the queue, so it always returns after the timeout.
 
 5. **jitschedto**
 
-   This is almost identical to the **jitqueue**, the only difference is that in
-   this implementation we use `schedule_timeout()` function to avoid manually
-   setting up wait queue.
+   Sets the state to `TASK_INTERRUPTIBLE` and calls `schedule_timeout()`.
+   `schedule_timeout_interruptible()` does both steps in one call.
 
 6. **jitimer**
 
-   The previous methods of delay all block the current process until the time
-   has elapsed. Sometimes we need some mechanism which won't block the current
-   process but can notify us the timeout. Kernel timer is best candidate.
-   In this implementation, we set the timeout value to `delay` variable. In
-   the timeout handler, we print some kernel information about the current 
-   execution context.
+   Arms a kernel timer that fires five times, every 10 jiffies, without
+   blocking the code that armed it. Each run records the jiffies, whether it
+   runs in softirq context, the pid, the CPU and the command name of the
+   interrupted process. The reader waits until all five runs are done.
 
 7. **jitasklet** and **jitasklethi**
 
-   Beside kernel timer, the tasklet mechanism in kernel can also fulfil the
-   same task. The different between **jitasklet** and **jitasklethi** is that
-   they have different priority.
+   The same as **jitimer**, but each run queues the next one on a BH
+   workqueue: `system_bh_wq` for **jitasklet** and `system_bh_highpri_wq` for
+   **jitasklethi**.
+
+   These two files used to use tasklets (`tasklet_schedule()` and
+   `tasklet_hi_schedule()`), as in LDD3. Tasklets are deprecated, and since
+   Linux 6.9 BH workqueues are their replacement: work items queued there
+   also run in softirq context, and the high priority queue plays the role
+   of the high priority tasklet. The file names are kept from the tasklet
+   days.
+
+Both timers and BH work must be stopped before the memory they use is freed.
+The example calls `timer_shutdown_sync()` and `disable_work_sync()` before
+`kfree()`, also when the reader is interrupted by a signal while the timer
+or work item is still queued.
+
+## choosing a delay function
+
+`Documentation/timers/delay_sleep_functions.rst` in the kernel source gives
+the current advice:
+
+- In atomic context (spinlock held, interrupt handler): `ndelay()`,
+  `udelay()`, `mdelay()`; these busy-wait, keep them short.
+- In process context: `fsleep(us)` picks the right sleeping function for the
+  duration; `usleep_range()` and `msleep()` can be used directly, and
+  `msleep_interruptible()` lets a signal end the sleep early.
 
 ---
 

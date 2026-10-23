@@ -1,111 +1,64 @@
-#include <linux/module.h>
-#include <linux/moduleparam.h>
-#include <linux/init.h>
+// SPDX-License-Identifier: GPL-2.0
+#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
-#include <linux/slab.h>
-#include <linux/time.h>
-#include <linux/timer.h>
+#include <linux/module.h>
+#include <linux/init.h>
 #include <linux/kernel.h>
 #include <linux/proc_fs.h>
-#include <linux/types.h>
-#include <linux/spinlock.h>
 #include <linux/seq_file.h>
-#include <linux/interrupt.h>
-
-#include <asm/hardirq.h>
 
 #include "main.h"
 #include "fops.h"
-int delay = HZ; /* the default delay, expressed in jiffies */
-int tdelay = 10;
 
-module_param(delay, int, 0);
-
-static struct opt *opts[PROC_FILE_NR] = { NULL };
-
-static
-int proc_open(struct inode *inode, struct file *filp)
-{
-	struct opt *opt = pde_data(inode);
-	return single_open(filp, opt->show, opt->args);
-}
-
-static
-int proc_release(struct inode *inode, struct file *filp)
-{
-	return single_release(inode, filp);
-}
-
-static struct proc_ops proc_ops = {
-	.proc_open    = proc_open,
-	.proc_read    = seq_read,
-	.proc_lseek   = seq_lseek,
-	.proc_release = proc_release,
+static const struct {
+	const char *name;
+	int (*show)(struct seq_file *m, void *p);
+	long arg;
+} jit_files[] = {
+	{ "currentime",  jit_currentime, 0 },
+	{ "jitbusy",     jit_fn,         JIT_BUSY },
+	{ "jitsched",    jit_fn,         JIT_SCHED },
+	{ "jitqueue",    jit_fn,         JIT_QUEUE },
+	{ "jitschedto",  jit_fn,         JIT_SCHEDTO },
+	{ "jitimer",     jit_timer,      0 },
+	/* named after the tasklets they replace, see the README */
+	{ "jitasklet",   jit_bh,         JIT_BH_NORMAL },
+	{ "jitasklethi", jit_bh,         JIT_BH_HIGHPRI },
 };
 
-
-static inline
-struct opt *new_opt(int (*show)(struct seq_file *m, void *p), void *args)
+static void remove_files(int count)
 {
-	struct opt *opt = kmalloc(sizeof(struct opt), GFP_KERNEL);
-	opt->show = show;
-	opt->args = args;
-
-	return opt;
+	while (count--)
+		remove_proc_entry(jit_files[count].name, NULL);
 }
 
-static
-int __init m_init(void)
+static int __init m_init(void)
 {
-	struct opt *opt = NULL;
-	int i = 0;
+	int i;
 
-	printk(KERN_WARNING MODULE_NAME " is loaded\n");
+	pr_info("loaded\n");
 
-	opt = opts[i++] = new_opt(jit_currentime, NULL);
-	proc_create_data("currentime", 0, NULL, &proc_ops, opt);
-
-	opt = opts[i++] = new_opt(jit_fn, (void*)JIT_BUSY);
-	proc_create_data("jitbusy",   0, NULL, &proc_ops, opt);
-	opt = opts[i++] = new_opt(jit_fn, (void*)JIT_SCHED);
-	proc_create_data("jitsched",  0, NULL, &proc_ops, opt);
-	opt = opts[i++] = new_opt(jit_fn, (void*)JIT_QUEUE);
-	proc_create_data("jitqueue",  0, NULL, &proc_ops, opt);
-	opt = opts[i++] = new_opt(jit_fn, (void*)JIT_SCHEDTO);
-	proc_create_data("jitschedto",0, NULL, &proc_ops, opt);
-
-	opt = opts[i++] = new_opt(jit_timer, NULL);
-	proc_create_data("jitimer", 0, NULL, &proc_ops, opt);
-
-	opt = opts[i++] = new_opt(jit_tasklet, NULL);
-	proc_create_data("jitasklet", 0, NULL, &proc_ops, opt);
-
-	opt = opts[i++] = new_opt(jit_tasklet, (void*)1);
-	proc_create_data("jitasklethi", 0, NULL, &proc_ops, opt);
+	for (i = 0; i < ARRAY_SIZE(jit_files); i++) {
+		/*
+		 * proc_create_single_data() wires up single_open() itself;
+		 * arg reaches the show function as m->private.
+		 */
+		if (!proc_create_single_data(jit_files[i].name, 0444, NULL,
+					     jit_files[i].show,
+					     (void *)jit_files[i].arg)) {
+			remove_files(i);
+			return -ENOMEM;
+		}
+	}
 
 	return 0;
 }
 
-static
-void __exit m_exit(void)
+static void __exit m_exit(void)
 {
-	printk(KERN_WARNING MODULE_NAME " unloaded\n");
+	pr_info("unloaded\n");
 
-	remove_proc_entry("currentime", NULL);
-	remove_proc_entry("jitbusy", NULL);
-	remove_proc_entry("jitsched", NULL);
-	remove_proc_entry("jitqueue", NULL);
-	remove_proc_entry("jitschedto", NULL);
-	remove_proc_entry("jitimer", NULL);
-	remove_proc_entry("jitasklet", NULL);
-	remove_proc_entry("jitasklethi", NULL);
-
-	for (int i = 0; i < PROC_FILE_NR; ++i)
-		kfree(opts[i]);
-
-#if 0
-	remove_proc_entry("jitasklethi", NULL);
-#endif
+	remove_files(ARRAY_SIZE(jit_files));
 }
 
 module_init(m_init);
@@ -114,4 +67,3 @@ module_exit(m_exit);
 MODULE_AUTHOR("d0u9");
 MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("Delay methods in Linux kernel.");
-
