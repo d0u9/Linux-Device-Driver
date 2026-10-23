@@ -1,7 +1,9 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _FOPS_H
 #define _FOPS_H
 
-extern int proc_open(struct inode *, struct file *);
-extern ssize_t proc_write(struct file *, const char __user *, size_t, loff_t *);
+#include <linux/fs.h>
+
+int pfi_open(struct inode *inode, struct file *filp);
 
 #endif
