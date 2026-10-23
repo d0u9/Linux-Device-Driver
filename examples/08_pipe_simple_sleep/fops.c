@@ -49,7 +49,9 @@ ssize_t pipe_read(struct file *filp, char __user *buff, size_t count,
 		pr_debug("read: process %d(%s) is going to sleep\n",
 			 current->pid, current->comm);
 
-		if (wait_event_interruptible(dev->rd_queue, dev->buff_len))
+		/* buff_len is read without the mutex here, hence READ_ONCE() */
+		if (wait_event_interruptible(dev->rd_queue,
+					     READ_ONCE(dev->buff_len)))
 			return -ERESTARTSYS;
 
 		if (mutex_lock_interruptible(&dev->mutex))
@@ -71,7 +73,8 @@ ssize_t pipe_read(struct file *filp, char __user *buff, size_t count,
 
 	/* all data in the buffer has been read */
 	if (dev->rd_pos >= dev->buff_len) {
-		dev->buff_len = 0;
+		/* pairs with the lockless READ_ONCE() in pipe_write() */
+		WRITE_ONCE(dev->buff_len, 0);
 		dev->rd_pos = 0;
 		pr_debug("read: process %d(%s) awakening the writers...\n",
 			 current->pid, current->comm);
@@ -106,7 +109,8 @@ ssize_t pipe_write(struct file *filp, const char __user *buff, size_t count,
 		pr_debug("write: process %d(%s) is going to sleep\n",
 			 current->pid, current->comm);
 
-		if (wait_event_interruptible(dev->wr_queue, !dev->buff_len))
+		if (wait_event_interruptible(dev->wr_queue,
+					     !READ_ONCE(dev->buff_len)))
 			return -ERESTARTSYS;
 
 		if (mutex_lock_interruptible(&dev->mutex))
@@ -125,7 +129,8 @@ ssize_t pipe_write(struct file *filp, const char __user *buff, size_t count,
 
 	/* we have successfully written something into the buffer */
 	if (count > 0) {
-		dev->buff_len = count;
+		/* pairs with the lockless READ_ONCE() in pipe_read() */
+		WRITE_ONCE(dev->buff_len, count);
 		dev->rd_pos = 0;
 
 		pr_debug("write: process %d(%s) awakening the readers...\n",
