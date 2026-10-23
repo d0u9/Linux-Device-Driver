@@ -1,6 +1,6 @@
 .PHONY: all
 all:
-	$(CC) --static -o async_notify.out async_notify.c
+	$(CC) -static -o async_notify.out async_notify.c
 
 .PHONY: clean
 clean:

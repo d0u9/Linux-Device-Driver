@@ -7,10 +7,24 @@ for readiness events. A sleeping task does not occupy the CPU; the scheduler
 can run other tasks.
 
 In this example, we write a simple device driver which implements the basic
-asynchronous notification mechanism. When some processes write any data to
-the device file, the process who set the file descriptor as async will receive
-the SIGIO signal. The process could catch this signal and check the file
-descriptor state for reading or writing.
+asynchronous notification mechanism. When a process writes data to the device
+file, every process that enabled `O_ASYNC` on it receives SIGIO. The process
+can catch this signal and then read the new data.
+
+The steps are:
+
+1. The process installs a SIGIO handler.
+2. `fcntl(fd, F_SETOWN, getpid())` tells the kernel who gets the signal.
+3. `fcntl(fd, F_SETFL, flags | O_ASYNC)` turns notification on. The kernel
+   calls the driver's `.fasync`, which adds the file to the device's
+   `async_queue` with `fasync_helper()`.
+4. On every write, the driver calls
+   `kill_fasync(&dev->async_queue, SIGIO, POLL_IN)` to signal all of them.
+
+When the file is closed, `.release` removes it from the queue again. The VFS
+would also do this on its own, since `__fput()` calls `.fasync` with
+`fd == -1` for files with `FASYNC` set; the example keeps the explicit call so
+the pairing is visible.
 
 ## build the module
 
@@ -37,26 +51,27 @@ sh load_module.sh
 
 ## test the module
 
-To test this kernel module, first compile and copy the test program located
-in **test** directory to the target machine. Then, after the module is
-successfully loaded, run the test program **async_notify.out**.
+Build the program in the **test** directory with `make`, load the module, and
+run `./async_notify.out`. It waits for SIGIO; in another console write to the
+device:
 
-The program **async_notify.out** registers the signal handler for SIGIO signal,
-which will be invoked when the file descriptor is notified. In the signal
-handler, we add 1 to the global variable each time the handler is invoked.
-The global variable will be checked in the loop in `main()` function, and set
-it to 0 if it is greater than 0. In this case, the `read()` function will be
-called on the file descriptor for read data from the valid file descriptor.
+```bash
+echo "Hello World!" > /dev/async_notify
+```
 
-Sample output is:
+The signal handler only sets a flag. The main loop keeps SIGIO blocked and
+waits in `sigsuspend()`, which unblocks it atomically while sleeping, so a
+signal cannot slip in between testing the flag and going to sleep. When the
+flag is set, the program reads the device and prints the message.
+
+Sample output:
 
 ```
-no signal, continue!;
-no signal, continue!;
-no signal, continue!;
-no signal, continue!;
-signal is catched
+waiting for SIGIO ...
+signal is caught
 Hello World!
+
+waiting for SIGIO ...
 ```
 
 ---

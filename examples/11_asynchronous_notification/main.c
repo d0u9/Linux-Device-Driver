@@ -1,78 +1,73 @@
+// SPDX-License-Identifier: GPL-2.0
+#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
+
 #include <linux/init.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
 
 #include <linux/fs.h>
 #include <linux/cdev.h>
+#include <linux/mutex.h>
 #include <linux/slab.h>
-#include <linux/uaccess.h>
 
 #include "main.h"
 #include "fops.h"
 
-static int async_notify_major = 0, async_notify_minor = 0;
-static struct async_notify_dev *async_notify_dev = NULL;
+static dev_t async_notify_devno;
+static struct async_notify_dev *async_notify_dev;
 
-static struct file_operations fops = {
-	.open  = async_notify_open,
-	.read  = async_notify_read,
-	.write = async_notify_write,
-	.fasync = async_notify_fasync,
+static const struct file_operations fops = {
+	.owner   = THIS_MODULE,
+	.open    = async_notify_open,
+	.read    = async_notify_read,
+	.write   = async_notify_write,
+	.fasync  = async_notify_fasync,
 	.release = async_notify_release,
 };
 
-static
-int __init m_init(void)
+static int __init m_init(void)
 {
-	dev_t devno;
-	int err = 0;
+	int err;
 
-	printk(KERN_WARNING MODULE_NAME " is loaded\n");
+	pr_info("loaded\n");
 
-	async_notify_dev = kmalloc(sizeof(struct async_notify_dev), GFP_KERNEL);
-	if (!async_notify_dev) {
-		pr_debug("Cannot alloc memory!\n");
+	async_notify_dev = kzalloc_obj(*async_notify_dev);
+	if (!async_notify_dev)
 		return -ENOMEM;
-	}
-	memset(async_notify_dev, 0, sizeof(struct async_notify_dev));
-
-	err = alloc_chrdev_region(&devno, async_notify_minor, ASYNC_NOTIFY_DEV_NR, MODULE_NAME);
-	if (err < 0) {
-		pr_debug("Can't get major!\n");
-		goto on_error;
-	}
-	async_notify_major = MAJOR(devno);
 
 	mutex_init(&async_notify_dev->mutex);
 	cdev_init(&async_notify_dev->cdev, &fops);
 	async_notify_dev->cdev.owner = THIS_MODULE;
 
-	devno = MKDEV(async_notify_major, async_notify_minor);
-	err = cdev_add(&async_notify_dev->cdev, devno, ASYNC_NOTIFY_DEV_NR);
+	err = alloc_chrdev_region(&async_notify_devno, 0, ASYNC_NOTIFY_DEV_NR,
+				  MODULE_NAME);
+	if (err < 0) {
+		pr_err("can't get major number: %d\n", err);
+		goto err_free;
+	}
+
+	err = cdev_add(&async_notify_dev->cdev, async_notify_devno,
+		       ASYNC_NOTIFY_DEV_NR);
 	if (err) {
-		pr_debug("Error when adding ioctl dev");
-		goto on_error;
+		pr_err("adding async_notify device failed: %d\n", err);
+		goto err_unregister;
 	}
 
 	return 0;
 
-on_error:
+err_unregister:
+	unregister_chrdev_region(async_notify_devno, ASYNC_NOTIFY_DEV_NR);
+err_free:
 	kfree(async_notify_dev);
 	return err;
 }
 
-static
-void __exit m_exit(void)
+static void __exit m_exit(void)
 {
-	dev_t devno;
-
-	printk(KERN_WARNING MODULE_NAME " unloaded\n");
+	pr_info("unloaded\n");
 
 	cdev_del(&async_notify_dev->cdev);
-
-	devno = MKDEV(async_notify_major, async_notify_minor);
-	unregister_chrdev_region(devno, ASYNC_NOTIFY_DEV_NR);
-
+	unregister_chrdev_region(async_notify_devno, ASYNC_NOTIFY_DEV_NR);
 	kfree(async_notify_dev);
 }
 
@@ -82,4 +77,3 @@ module_exit(m_exit);
 MODULE_AUTHOR("d0u9");
 MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("Asynchronous notification for non-block IO");
-

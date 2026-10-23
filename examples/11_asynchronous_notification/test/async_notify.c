@@ -1,50 +1,68 @@
+// SPDX-License-Identifier: GPL-2.0
+#include <fcntl.h>
+#include <signal.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <signal.h>
-#include <fcntl.h>
 
 #define DEV_FILE		"/dev/async_notify"
 
-static int gotdata = 0;
-static char buffer[4096] = {0};
+static volatile sig_atomic_t gotdata;
+static char buffer[4096];
 
-void sighandler(int signo)
+static void sighandler(int signo)
 {
 	if (signo == SIGIO)
-		gotdata++;
-	return;
+		gotdata = 1;
 }
 
-int main(int argc, char **argv)
+int main(void)
 {
-	int count, fd;
 	struct sigaction action;
+	sigset_t block, orig;
+	ssize_t count;
+	int fd, flags;
 
 	memset(&action, 0, sizeof(action));
 	action.sa_handler = sighandler;
-	action.sa_flags = 0;
-
 	sigaction(SIGIO, &action, NULL);
 
 	fd = open(DEV_FILE, O_RDONLY);
+	if (fd < 0) {
+		perror("open " DEV_FILE);
+		return 1;
+	}
+
+	/* deliver SIGIO for this fd to us, then turn on O_ASYNC */
 	fcntl(fd, F_SETOWN, getpid());
-	fcntl(fd, F_SETFL, fcntl(STDIN_FILENO, F_GETFL) | FASYNC);
+	flags = fcntl(fd, F_GETFL);
+	fcntl(fd, F_SETFL, flags | O_ASYNC);
 
-	while(1) {
-		sleep(1);
+	/*
+	 * Keep SIGIO blocked except inside sigsuspend(). Otherwise a signal
+	 * arriving between the gotdata test and the wait would be missed.
+	 */
+	sigemptyset(&block);
+	sigaddset(&block, SIGIO);
+	sigprocmask(SIG_BLOCK, &block, &orig);
 
-		if (!gotdata) {
-			printf("no signal, continue!\n");
-			continue;
-		}
-		printf("signal is catched\n");
+	for (;;) {
+		printf("waiting for SIGIO ...\n");
+		while (!gotdata)
+			sigsuspend(&orig);
 		gotdata = 0;
 
-		count = read(fd, buffer, 4096);
+		printf("signal is caught\n");
+
+		count = read(fd, buffer, sizeof(buffer) - 1);
+		if (count < 0) {
+			perror("read");
+			break;
+		}
+		buffer[count] = '\0';
 		printf("%s\n", buffer);
 	}
 
+	close(fd);
 	return 0;
 }
