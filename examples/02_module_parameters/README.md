@@ -23,7 +23,7 @@ are set, the current running kernel will be built against.
 
 ## Usage
 
-Copy **hello_world.ko** file to the target machine, then run:
+Copy **module_parameters.ko** file to the target machine, then run:
 
 ```bash
 insmod module_parameters.ko
@@ -44,16 +44,16 @@ unload this module and pass parameters to it when loading.
 rmmod module_parameters
 
 # re-load the module and passing parameters to it
-insmod module_parameters.ko whom=dady howmany=3
+insmod module_parameters.ko whom=daddy howmany=3
 ```
 
 This time, the message is changed:
 
 ```
 [ 1322.364784] parameters test module is loaded
-[ 1322.366768] #0 Hello, dady
-[ 1322.367999] #1 Hello, dady
-[ 1322.369154] #2 Hello, dady
+[ 1322.366768] #0 Hello, daddy
+[ 1322.367999] #1 Hello, daddy
+[ 1322.369154] #2 Hello, daddy
 ```
 
 ---
