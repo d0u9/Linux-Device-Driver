@@ -1,250 +1,300 @@
+// SPDX-License-Identifier: GPL-2.0
+#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
+
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/moduleparam.h>
 #include <linux/init.h>
 
-
-#include <linux/fs.h>
+#include <asm/barrier.h>
+#include <linux/jiffies.h>
+#include <linux/preempt.h>
 #include <linux/proc_fs.h>
+#include <linux/sched.h>
+#include <linux/sched/signal.h>
 #include <linux/seq_file.h>
 #include <linux/slab.h>
-#include <linux/sched.h>
-#include <linux/errno.h>  /* error codes */
+#include <linux/smp.h>
 #include <linux/workqueue.h>
-#include <linux/preempt.h>
-#include <linux/interrupt.h> /* tasklets */
 
 #include "main.h"
 
-static long delay = 0;
-module_param(delay, long, 0);
+static unsigned int delay;
+module_param(delay, uint, 0444);
+MODULE_PARM_DESC(delay, "Delay between runs of jiqwqdelay, in jiffies");
 
-static struct jiq_dev *jiq_dev = NULL;
+static struct jiq_dev *jiq_dev;
 
-static int jiq_print(struct jiq_dev *dev)
+/* Mark the buffer complete and wake the reader. */
+static void jiq_done(struct jiq_dev *dev)
 {
-	int  len = dev->len;
-	char *buf = dev->buf;
+	/* release: publish dev->buf before done reads 1 */
+	smp_store_release(&dev->done, 1);
+	wake_up_interruptible(&dev->jiq_wait);
+}
+
+/*
+ * Append one line describing the current context. Returns false, after
+ * waking the reader, once the buffer has no room for another line.
+ */
+static bool jiq_print(struct jiq_dev *dev)
+{
 	unsigned long j = jiffies;
 
-	pr_debug("%s() is invoked\n", __FUNCTION__);
+	pr_debug("%s() is invoked\n", __func__);
 
-	if (len == 0)
-		len = sprintf(buf,"    time  delta preempt   pid cpu command\n");
+	if (dev->len == 0)
+		dev->len = scnprintf(dev->buf, BUF_LEN,
+				     "    time  delta preempt   pid cpu command\n");
 
-	len += sprintf(buf + len, "%9li  %4li     %3i %5i %3i %s\n",
-		       j, j - dev->jiffies,
-		       preempt_count(), current->pid, smp_processor_id(),
-		       current->comm);
-
-	if (len > BUF_LEN) {
-		pr_debug("len = %d\n", len);
-		wake_up_interruptible(&dev->jiq_wait);
-		return 0;
-	}
-
-	dev->len = len;
+	/* raw_: the CPU number is only printed, see 13_jit */
+	dev->len += scnprintf(dev->buf + dev->len, BUF_LEN - dev->len,
+			      "%9lu  %4lu     %3i %5i %3i %s\n",
+			      j, j - dev->jiffies,
+			      preempt_count(), current->pid,
+			      raw_smp_processor_id(), current->comm);
 	dev->jiffies = j;
 
-	return 1;
+	if (BUF_LEN - dev->len < LINE_MAX_LEN) {
+		jiq_done(dev);
+		return false;
+	}
+
+	return true;
 }
 
-static
-void jiq_print_wq_delayd(struct work_struct *work)
+/* Reset the buffer before a new read. Called with dev->lock held. */
+static void jiq_reset(struct jiq_dev *dev)
 {
-	struct jiq_dev *dev = container_of(work, struct jiq_dev, jiq_work_delay.work);
-
-	pr_debug("%s() is invoked\n", __FUNCTION__);
-
-	if (!jiq_print(dev))
-		return;
-
-	schedule_delayed_work(&dev->jiq_work_delay, dev->delay);
+	dev->len = 0;
+	dev->jiffies = jiffies;
+	WRITE_ONCE(dev->done, 0);
 }
 
-static
-void jiq_print_wq(struct work_struct *work)
+/* Wait until the buffer is complete, then print it. */
+static int jiq_wait_and_show(struct seq_file *m, struct jiq_dev *dev)
+{
+	/* acquire pairs with smp_store_release() in jiq_done() */
+	if (wait_event_interruptible(dev->jiq_wait, smp_load_acquire(&dev->done)))
+		return -ERESTARTSYS;
+
+	seq_puts(m, dev->buf);
+	return 0;
+}
+
+/*
+ * Call jiq_print() from the shared workqueue. schedule_work() queues on
+ * system_percpu_wq, formerly called system_wq.
+ */
+static void jiq_print_wq(struct work_struct *work)
 {
 	struct jiq_dev *dev = container_of(work, struct jiq_dev, jiq_work);
 
-	pr_debug("%s() is invoked\n", __FUNCTION__);
+	if (jiq_print(dev))
+		schedule_work(&dev->jiq_work);
+}
 
-	if (!jiq_print(dev))
-		return;
+static int jiq_read_wq(struct seq_file *m, void *v)
+{
+	struct jiq_dev *dev = jiq_dev;
+	DEFINE_WAIT(wait);
+	int retval = 0;
 
+	pr_debug("%s() is invoked\n", __func__);
+
+	if (mutex_lock_interruptible(&dev->lock))
+		return -ERESTARTSYS;
+
+	jiq_reset(dev);
 	schedule_work(&dev->jiq_work);
+
+	/*
+	 * Sleep by hand, as in 09_pipe_advanced_sleep, instead of using
+	 * wait_event_interruptible() like the other files.
+	 *
+	 * prepare_to_wait() comes before the test, so a wakeup between the
+	 * test and schedule() is not lost: it sets us back to TASK_RUNNING.
+	 *
+	 * schedule() returning does not mean the work is done. A signal, a
+	 * wake_up() meant for another file sharing jiq_wait, or a spurious
+	 * wakeup also end it, hence the loop that tests done and
+	 * signal_pending() every time.
+	 */
+	for (;;) {
+		prepare_to_wait(&dev->jiq_wait, &wait, TASK_INTERRUPTIBLE);
+		/* acquire pairs with smp_store_release() in jiq_done() */
+		if (smp_load_acquire(&dev->done))
+			break;
+		if (signal_pending(current)) {
+			retval = -ERESTARTSYS;
+			break;
+		}
+		schedule();
+	}
+	finish_wait(&dev->jiq_wait, &wait);
+
+	/* after a signal the work is still re-queueing itself; stop it */
+	cancel_work_sync(&dev->jiq_work);
+
+	if (!retval)
+		seq_puts(m, dev->buf);
+
+	mutex_unlock(&dev->lock);
+	return retval;
 }
 
-static
-int jiq_read_wq_delayed(struct seq_file *m, void *v)
+/* Call jiq_print() from a delayed work item, dev->delay jiffies apart. */
+static void jiq_print_wq_delayed(struct work_struct *work)
 {
-	DEFINE_WAIT(wait);
+	struct jiq_dev *dev = container_of(work, struct jiq_dev,
+					   jiq_work_delayed.work);
 
-	pr_debug("%s() is invoked\n", __FUNCTION__);
-	
-	jiq_dev->len = 0;
-	memset(jiq_dev->buf, 0, BUF_LEN);
-	jiq_dev->jiffies = jiffies;
-	jiq_dev->delay = delay;
-
-	prepare_to_wait(&jiq_dev->jiq_wait, &wait, TASK_INTERRUPTIBLE);
-	schedule_delayed_work(&jiq_dev->jiq_work_delay, jiq_dev->delay);
-	schedule();
-	finish_wait(&jiq_dev->jiq_wait, &wait);
-
-	seq_printf(m, "%s", jiq_dev->buf);
-
-	return 0;
+	if (jiq_print(dev))
+		schedule_delayed_work(&dev->jiq_work_delayed, dev->delay);
 }
 
-static
-int jiq_read_wq(struct seq_file *m, void *v)
+static int jiq_read_wq_delayed(struct seq_file *m, void *v)
 {
-	DEFINE_WAIT(wait);
+	struct jiq_dev *dev = jiq_dev;
+	int retval;
 
-	pr_debug("%s() is invoked\n", __FUNCTION__);
+	pr_debug("%s() is invoked\n", __func__);
 
-	jiq_dev->len = 0;
-	memset(jiq_dev->buf, 0, BUF_LEN);
-	jiq_dev->jiffies = jiffies;
-	jiq_dev->delay = 0;
+	if (mutex_lock_interruptible(&dev->lock))
+		return -ERESTARTSYS;
 
-	prepare_to_wait(&jiq_dev->jiq_wait, &wait, TASK_INTERRUPTIBLE);
-	schedule_work(&jiq_dev->jiq_work);
-	schedule();
-	finish_wait(&jiq_dev->jiq_wait, &wait);
+	jiq_reset(dev);
+	dev->delay = delay;
+	schedule_delayed_work(&dev->jiq_work_delayed, dev->delay);
 
-	seq_printf(m, "%s", jiq_dev->buf);
+	retval = jiq_wait_and_show(m, dev);
+	cancel_delayed_work_sync(&dev->jiq_work_delayed);
 
-	return 0;
+	mutex_unlock(&dev->lock);
+	return retval;
 }
 
-/*
- * Call jiq_print from a timer
- */
-static
-void jiq_timedout(struct timer_list *t)
+/* Call jiq_print() once from a timer, one second later. */
+static void jiq_timedout(struct timer_list *t)
 {
 	struct jiq_dev *dev = timer_container_of(dev, t, timer);
 
-	pr_debug("%s() is invoked\n", __FUNCTION__);
-
-	jiq_print(dev);            /* print a line */
-
-	dev->timeout = 1;
-	wake_up_interruptible(&dev->jiq_wait);  /* awake the process */
+	jiq_print(dev);
+	jiq_done(dev);
 }
 
-static
-int jiq_read_run_timer(struct seq_file *m, void *v)
+static int jiq_read_run_timer(struct seq_file *m, void *v)
 {
-	pr_debug("%s() is invoked\n", __FUNCTION__);
+	struct jiq_dev *dev = jiq_dev;
+	int retval;
 
-	jiq_dev->len = 0;
-	memset(jiq_dev->buf, 0, BUF_LEN);
-	jiq_dev->jiffies  =jiffies;
+	pr_debug("%s() is invoked\n", __func__);
 
-	timer_setup(&jiq_dev->timer, jiq_timedout, 0);
-	jiq_dev->timer.expires = jiffies + HZ;
+	if (mutex_lock_interruptible(&dev->lock))
+		return -ERESTARTSYS;
 
-	jiq_print(jiq_dev);
+	jiq_reset(dev);
+	jiq_print(dev);		/* the first line, from process context */
+	mod_timer(&dev->timer, jiffies + HZ);
 
-	add_timer(&jiq_dev->timer);
-	wait_event_interruptible(jiq_dev->jiq_wait, jiq_dev->timeout);
-	jiq_dev->timeout = 0;
-	timer_delete_sync(&jiq_dev->timer);
+	retval = jiq_wait_and_show(m, dev);
+	timer_delete_sync(&dev->timer);
 
-	seq_printf(m, "%s", jiq_dev->buf);
-
-	return 0;
+	mutex_unlock(&dev->lock);
+	return retval;
 }
 
 /*
- * Call jiq_print from a tasklet
+ * Call jiq_print() from a BH work item, i.e. in softirq context. This file
+ * used a tasklet (tasklet_schedule()) as in LDD3; tasklets are deprecated
+ * and BH workqueues replace them since Linux 6.9.
  */
-static
-void jiq_print_tasklet(unsigned long ptr)
+static void jiq_print_bh(struct work_struct *work)
 {
-	struct jiq_dev *dev = (struct jiq_dev*) ptr;
+	struct jiq_dev *dev = container_of(work, struct jiq_dev, bh_work);
 
-	pr_debug("%s() is invoked\n", __FUNCTION__);
-
-	if (jiq_print(dev)) {
-		tasklet_schedule(&dev->tlet);
-		return;
-	}
-
-	dev->timeout = 1;
-	wake_up_interruptible(&dev->jiq_wait);  /* awake the process */
+	if (jiq_print(dev))
+		queue_work(system_bh_wq, &dev->bh_work);
 }
 
-static
-int jiq_read_tasklet(struct seq_file *m, void *v)
+static int jiq_read_bh(struct seq_file *m, void *v)
 {
-	jiq_dev->len = 0;
-	memset(jiq_dev->buf, 0, BUF_LEN);
-	jiq_dev->jiffies  =jiffies;
+	struct jiq_dev *dev = jiq_dev;
+	int retval;
 
-	tasklet_init(&jiq_dev->tlet, jiq_print_tasklet, (unsigned long)jiq_dev);
+	pr_debug("%s() is invoked\n", __func__);
 
-	tasklet_schedule(&jiq_dev->tlet);
-	wait_event_interruptible(jiq_dev->jiq_wait, jiq_dev->timeout);
-	jiq_dev->timeout = 0;
+	if (mutex_lock_interruptible(&dev->lock))
+		return -ERESTARTSYS;
 
-	seq_printf(m, "%s", jiq_dev->buf);
+	jiq_reset(dev);
+	queue_work(system_bh_wq, &dev->bh_work);
 
-	return 0;
+	retval = jiq_wait_and_show(m, dev);
+	cancel_work_sync(&dev->bh_work);
+
+	mutex_unlock(&dev->lock);
+	return retval;
 }
 
-static
-int proc_open(struct inode *inode, struct file *filp)
-{
-	int (*show)(struct seq_file *m, void *v) = pde_data(inode);
-	return single_open(filp, show, NULL);
-}
-
-static
-int proc_release(struct inode *inode, struct file *filp)
-{
-	return single_release(inode, filp);
-}
-
-static struct proc_ops proc_ops = {
-	.proc_open    = proc_open,
-	.proc_read    = seq_read,
-	.proc_lseek   = seq_lseek,
-	.proc_release = proc_release,
+static const struct {
+	const char *name;
+	int (*show)(struct seq_file *m, void *v);
+} jiq_files[] = {
+	{ "jiqwq",      jiq_read_wq },
+	{ "jiqwqdelay", jiq_read_wq_delayed },
+	{ "jiqtimer",   jiq_read_run_timer },
+	/* named after the tasklet it used to be */
+	{ "jiqtasklet", jiq_read_bh },
 };
 
-static
-int m_init(void)
+static void remove_files(int count)
 {
-	jiq_dev = kmalloc(sizeof(struct jiq_dev), GFP_KERNEL);
+	while (count--)
+		remove_proc_entry(jiq_files[count].name, NULL);
+}
 
-	printk(KERN_WARNING MODULE_NAME " is loaded\n");
+static int __init m_init(void)
+{
+	int i;
 
-	INIT_WORK(&jiq_dev->jiq_work, jiq_print_wq);
-	INIT_DELAYED_WORK(&jiq_dev->jiq_work_delay, jiq_print_wq_delayd);
+	pr_info("loaded\n");
 
+	jiq_dev = kzalloc_obj(*jiq_dev);
+	if (!jiq_dev)
+		return -ENOMEM;
+
+	mutex_init(&jiq_dev->lock);
 	init_waitqueue_head(&jiq_dev->jiq_wait);
+	INIT_WORK(&jiq_dev->jiq_work, jiq_print_wq);
+	INIT_DELAYED_WORK(&jiq_dev->jiq_work_delayed, jiq_print_wq_delayed);
+	timer_setup(&jiq_dev->timer, jiq_timedout, 0);
+	INIT_WORK(&jiq_dev->bh_work, jiq_print_bh);
 
-	proc_create_data("jiqwq", 0, NULL, &proc_ops, jiq_read_wq);
-	proc_create_data("jiqwqdelay", 0, NULL, &proc_ops, jiq_read_wq_delayed);
-	proc_create_data("jiqtimer", 0, NULL, &proc_ops, jiq_read_run_timer);
-	proc_create_data("jiqtasklet", 0, NULL, &proc_ops, jiq_read_tasklet);
+	for (i = 0; i < ARRAY_SIZE(jiq_files); i++) {
+		if (!proc_create_single(jiq_files[i].name, 0444, NULL,
+					jiq_files[i].show)) {
+			remove_files(i);
+			kfree(jiq_dev);
+			return -ENOMEM;
+		}
+	}
 
 	return 0;
 }
 
-static
-void m_exit(void)
+static void __exit m_exit(void)
 {
-	printk(KERN_WARNING MODULE_NAME " unloaded\n");
+	pr_info("unloaded\n");
 
-	remove_proc_entry("jiqwq", NULL);
-	remove_proc_entry("jiqwqdelay", NULL);
-	remove_proc_entry("jiqtimer", NULL);
-	remove_proc_entry("jiqtasklet", NULL);
+	/* no reader is left once the files are gone */
+	remove_files(ARRAY_SIZE(jiq_files));
+
+	/* every read stops its work before returning; be sure anyway */
+	cancel_work_sync(&jiq_dev->jiq_work);
+	cancel_delayed_work_sync(&jiq_dev->jiq_work_delayed);
+	timer_shutdown_sync(&jiq_dev->timer);
+	cancel_work_sync(&jiq_dev->bh_work);
 
 	kfree(jiq_dev);
 }
@@ -254,4 +304,4 @@ module_exit(m_exit);
 
 MODULE_AUTHOR("d0u9");
 MODULE_LICENSE("GPL");
-MODULE_DESCRIPTION("Use tasklet in kernel");
+MODULE_DESCRIPTION("Deferring work with workqueues, timers and BH work");
