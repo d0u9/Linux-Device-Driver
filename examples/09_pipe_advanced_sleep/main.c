@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-2.0
+#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
+
 #include <linux/init.h>
 #include <linux/module.h>
 #include <linux/kernel.h>
@@ -5,26 +8,22 @@
 #include <linux/cdev.h>
 #include <linux/fs.h>
 #include <linux/wait.h>
-#include <linux/sched.h>
-#include <asm/uaccess.h>
 
 #include "main.h"
 #include "fops.h"
 
-static int pipe_major = 0, pipe_minor = 0;
+static dev_t pipe_devno;
 static struct pipe_dev *pipe_dev[PIPE_DEV_NR];
 
-static struct file_operations fops = {
+static const struct file_operations fops = {
 	.owner = THIS_MODULE,
 	.open  = pipe_open,
 	.read  = pipe_read,
-	.write = pipe_write
+	.write = pipe_write,
 };
 
-static
-void __init init_pipe_dev(struct pipe_dev *dev)
+static void __init init_pipe_dev(struct pipe_dev *dev)
 {
-	memset(dev, 0, sizeof(struct pipe_dev));
 	mutex_init(&dev->mutex);
 
 	cdev_init(&dev->cdev, &fops);
@@ -34,56 +33,62 @@ void __init init_pipe_dev(struct pipe_dev *dev)
 	init_waitqueue_head(&dev->wr_queue);
 }
 
-static
-int __init m_init(void)
+static void pipe_destroy_devs(int count)
 {
-	dev_t devno;
-	int err = 0;
+	/* Tear down in the reverse order of creation. */
+	for (int i = count - 1; i >= 0; --i) {
+		cdev_del(&pipe_dev[i]->cdev);
+		kfree(pipe_dev[i]);
+		pipe_dev[i] = NULL;
+	}
+}
 
-	printk(KERN_WARNING MODULE_NAME " is loaded\n");
+static int __init m_init(void)
+{
+	int err;
+	int i;
 
-	err = alloc_chrdev_region(&devno, pipe_minor, PIPE_DEV_NR, MODULE_NAME);
+	pr_info("loaded\n");
+
+	err = alloc_chrdev_region(&pipe_devno, 0, PIPE_DEV_NR, MODULE_NAME);
 	if (err < 0) {
-		pr_debug("Can't get major!\n");
+		pr_err("can't get major number: %d\n", err);
 		return err;
 	}
-	pipe_major = MAJOR(devno);
 
-	for (int i = 0; i < PIPE_DEV_NR; ++i) {
-		pipe_dev[i] = kmalloc(sizeof(struct pipe_dev), GFP_KERNEL);
+	for (i = 0; i < PIPE_DEV_NR; ++i) {
+		pipe_dev[i] = kzalloc_obj(*pipe_dev[i]);
 		if (!pipe_dev[i]) {
-			pr_debug("Error(%d): kmalloc failed on pipe%d\n", err, i);
-			continue;
+			err = -ENOMEM;
+			goto err_destroy;
 		}
 
 		init_pipe_dev(pipe_dev[i]);
 
-		devno = MKDEV(pipe_major, pipe_minor + i);
-		err = cdev_add(&pipe_dev[i]->cdev, devno, 1);
+		err = cdev_add(&pipe_dev[i]->cdev,
+			       MKDEV(MAJOR(pipe_devno), MINOR(pipe_devno) + i), 1);
 		if (err) {
-			pr_debug("Error(%d): Adding pipe%d error\n", err, i);
+			pr_err("adding pipe%d failed: %d\n", i, err);
 			kfree(pipe_dev[i]);
 			pipe_dev[i] = NULL;
+			goto err_destroy;
 		}
 	}
 
 	return 0;
+
+err_destroy:
+	pipe_destroy_devs(i);
+	unregister_chrdev_region(pipe_devno, PIPE_DEV_NR);
+	return err;
 }
 
-static
-void __exit m_exit(void)
+static void __exit m_exit(void)
 {
-	dev_t devno;
+	pr_info("unloaded\n");
 
-	printk(KERN_WARNING MODULE_NAME " unloaded\n");
-
-	for (int i = 0; i < PIPE_DEV_NR; ++i) {
-		cdev_del(&pipe_dev[i]->cdev);
-		kfree(pipe_dev[i]);
-	}
-
-	devno = MKDEV(pipe_major, pipe_minor);
-	unregister_chrdev_region(devno, PIPE_DEV_NR);
+	pipe_destroy_devs(PIPE_DEV_NR);
+	unregister_chrdev_region(pipe_devno, PIPE_DEV_NR);
 }
 
 module_init(m_init);
@@ -91,7 +96,4 @@ module_exit(m_exit);
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("d0u9");
-MODULE_DESCRIPTION("A pipe like device in which the advancded sleep skill is"
-		   "demostrated.");
-
-
+MODULE_DESCRIPTION("A pipe like device showing the steps of putting a process to sleep");
