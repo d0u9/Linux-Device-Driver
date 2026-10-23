@@ -1,5 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0
+#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
+
 #include <linux/module.h>
-#include <linux/init.h> 
+#include <linux/init.h>
 #include <linux/sched.h>
 #include <linux/kernel.h>
 #include <linux/fs.h>
@@ -9,14 +12,12 @@
 
 #include "main.h"
 
-static int completion_major = 0, completion_minor = 0;
-
+static dev_t completion_devno;
 static struct completion_dev completion_dev;
 
-static
-int completion_open(struct inode *inode, struct file *filp)
+static int completion_open(struct inode *inode, struct file *filp)
 {
-	pr_debug("%s() is invoked\n", __FUNCTION__);
+	pr_debug("%s() is invoked\n", __func__);
 
 	filp->private_data = container_of(inode->i_cdev,
 					  struct completion_dev, cdev);
@@ -24,82 +25,77 @@ int completion_open(struct inode *inode, struct file *filp)
 	return 0;
 }
 
-static
-ssize_t completion_read(struct file *filp, char __user *buf, size_t count, loff_t *pos)
+static ssize_t completion_read(struct file *filp, char __user *buf,
+			       size_t count, loff_t *pos)
 {
 	struct completion_dev *dev = filp->private_data;
 
-	pr_debug("%s() is invoked\n", __FUNCTION__);
+	pr_debug("%s() is invoked\n", __func__);
 
-	pr_debug("process %d(%s) is going to sleep\n", current->pid, current->comm);
-	wait_for_completion(&dev->completion);
+	pr_debug("process %d(%s) is going to sleep\n",
+		 current->pid, current->comm);
+	/* Sleep interruptibly so the reader can be stopped with Ctrl-C. */
+	if (wait_for_completion_interruptible(&dev->completion))
+		return -ERESTARTSYS;
 	pr_debug("awoken %d(%s)\n", current->pid, current->comm);
 
 	return 0;
 }
 
-static
-ssize_t completion_write(struct file *filp, const char __user *buf, size_t count,
-		       loff_t *pos)
+static ssize_t completion_write(struct file *filp, const char __user *buf,
+				size_t count, loff_t *pos)
 {
 	struct completion_dev *dev = filp->private_data;
 
-	pr_debug("%s() is invoked\n", __FUNCTION__);
+	pr_debug("%s() is invoked\n", __func__);
 
 	pr_debug("process %d(%s) awakening the readers...\n",
-	       current->pid, current->comm);
+		 current->pid, current->comm);
 	complete(&dev->completion);
 
 	return count;
 }
 
-static struct file_operations completion_fops = {
+static const struct file_operations completion_fops = {
 	.owner = THIS_MODULE,
-	.open  = completion_open, 
+	.open  = completion_open,
 	.read  = completion_read,
 	.write = completion_write,
 };
 
-static
-int __init m_init(void)
+static int __init m_init(void)
 {
-	int err = 0;
-	dev_t devno;
+	int err;
 
-	printk(KERN_WARNING MODULE_NAME " is loaded\n");
+	pr_info("loaded\n");
 
 	init_completion(&completion_dev.completion);
 
-	err = alloc_chrdev_region(&devno, completion_minor, 1, MODULE_NAME);
+	err = alloc_chrdev_region(&completion_devno, 0, 1, MODULE_NAME);
 	if (err < 0) {
-		pr_debug("Cant't get major");
+		pr_err("can't get major number: %d\n", err);
 		return err;
 	}
-	completion_major = MAJOR(devno);
 
 	cdev_init(&completion_dev.cdev, &completion_fops);
+	completion_dev.cdev.owner = THIS_MODULE;
 
-	devno = MKDEV(completion_major, completion_minor);
-	err = cdev_add(&completion_dev.cdev, devno, 1);
+	err = cdev_add(&completion_dev.cdev, completion_devno, 1);
 	if (err) {
-		pr_debug("Error(%d): Adding completion device error\n", err);
+		pr_err("adding completion device failed: %d\n", err);
+		unregister_chrdev_region(completion_devno, 1);
 		return err;
 	}
 
 	return 0;
 }
 
-static
-void __exit m_exit(void)
+static void __exit m_exit(void)
 {
-	dev_t devno;
-
-	printk(KERN_WARNING MODULE_NAME " unloaded\n");
+	pr_info("unloaded\n");
 
 	cdev_del(&completion_dev.cdev);
-
-	devno = MKDEV(completion_major, completion_minor);
-	unregister_chrdev_region(devno, 1);
+	unregister_chrdev_region(completion_devno, 1);
 }
 
 module_init(m_init);

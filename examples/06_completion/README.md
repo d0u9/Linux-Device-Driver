@@ -35,8 +35,7 @@ In this example, we need two consoles in which we can perform read and write
 separately. You can use any remote login tools, such as ssh or telnet, to open
 another console. For users who followed my QEMU dev setup instruction, it
 should already successfully have a telnetd daemon running. For more details,
-check [the telnet server setup](../../docs/02_getting_started/05_telnet_server.md) for
-more details.
+check [the telnet server setup](../../docs/02_getting_started/05_telnet_server.md).
 
 After the kernel module is loaded successfully. Execute the following command
 in console 1:
@@ -50,6 +49,13 @@ process write something into the same file.
 
 Here, in console 2, execute `echo "something" > /dev/completion`. After this,
 the **cat** process previously executed in console 1 is woken up.
+
+The reader sleeps interruptibly, so pressing Ctrl-C in console 1 also stops it.
+
+A completion counts its events. Each `complete()` adds one and each finished
+wait consumes one, so if you write twice while nobody is reading, the next two
+`cat` commands return at once without blocking. `complete_all()` would instead
+wake every waiter and let all later waits pass until `reinit_completion()`.
 
 ---
 
