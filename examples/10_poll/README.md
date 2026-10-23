@@ -5,12 +5,26 @@ monitor multiple file descriptors for I/O readiness. Unlike a blocking
 `read()` or `write()` on a single descriptor, `poll()` can wait for events on
 a set of descriptors and report which ones are ready for the requested I/O.
 
-In this example, we implement a simple char device to test our poll ability.
-After the module is successfully loaded, a timer will be used to control the
-device if it is readable or writable. Each time the timer is out, the read flag
-and write flag will be set to 1, and the value will be consumed when some
-processes read or write this device file. Here, we set the read flag each
-second elapsed, and set the write flag every two seconds elapsed.
+In this example, we implement a simple char device to test poll. After the
+module is loaded, a timer decides when the device is readable or writable:
+every second it sets a read flag and wakes up the readers, and every other
+second it also sets a write flag and wakes up the writers. A `read()` or
+`write()` consumes the matching flag; without it, the call sleeps until the
+timer sets it again, or fails with `-EAGAIN` if the file was opened with
+`O_NONBLOCK`. A read returns the whole stored message and a write replaces it.
+
+The driver's `.poll` method does two things only:
+
+1. Call `poll_wait()` on every wait queue that may change the device state.
+   This does not sleep; it registers the queue so that a later `wake_up()`
+   makes the kernel ask the driver again.
+2. Return the current state as a mask of `EPOLLIN`/`EPOLLRDNORM` and
+   `EPOLLOUT`/`EPOLLWRNORM`.
+
+The sleeping itself is done by the kernel's poll core, which may call
+`.poll` several times during one `poll()` call. So `.poll` must only look at
+the state and never change it; the flags are consumed by `read()` and
+`write()`.
 
 ## build the module
 
@@ -36,15 +50,13 @@ sh load_module.sh
 
 ## test the module
 
-After successfully load the driver, simply run the executable **poll.out** in
-the **test** directory.
+After loading the driver, build the program in the **test** directory with
+`make` and run `./poll.out`.
 
-Each time the file descriptor is writable, we write the current loop counter
-into the device file. Likewise, each time the file descriptor is readable, we
-read the content from it and print to the screen.
-
-As we described before, the file descriptor to the device file we opened will
-be readable every 1 second, and will be writable every 2 seconds.
+Each time the file descriptor is writable, the program writes the current loop
+counter into the device file. Likewise, each time the file descriptor is
+readable, it reads the message and prints it to the screen. The descriptor
+becomes readable every second and writable every two seconds.
 
 Sample output as below:
 
