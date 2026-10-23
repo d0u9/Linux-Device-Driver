@@ -15,8 +15,7 @@ module load and file open.
 
 The proc interface varied a lot from the content of LDD3, it introduces new
 interfaces and methods to dump content from Kernel to userspace more easily.
-Check '/home/doug/Linux_Kernel/linux/Documentation/filesystems/seq_file.txt'
-for more.
+Check `Documentation/filesystems/seq_file.rst` in the kernel source for more.
 
 This example uses the `single_open()` interface to expose a small amount of
 kernel data to user space. For larger amounts of data, the `seq_file` iterator
@@ -58,7 +57,7 @@ Execute `cat /proc/proc_demo/proc_fs_mul` in the command line, you will get
 method. In `open()` method, `pde_data(inode)` helps retrieving pointer to data
 from inode structure.
 
-Also, `simple_open()` method's third argument acts as a data pointer as well.
+Also, `single_open()` method's third argument acts as a data pointer as well.
 Users can retrieve the data pointer from `struct seq_file`'s private field.
 
 ---
