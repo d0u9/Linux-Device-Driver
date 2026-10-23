@@ -1,10 +1,17 @@
 # pipe\_simple\_sleep
 
-In this example, we implement a simple pipe-like device, in which one process
-read it will be blocked until another process writes something to the same
-device. We call this example as _simple\_sleep_ because the kernel APIs we used
-in this example is simple. We have not to deep down into the internal
-mechanism of how wait queue works.
+In this example, we implement a simple pipe-like device. A process reading it
+is blocked until another process writes something to the same device, and a
+writer is blocked until the previous data has been read. We call this example
+_simple\_sleep_ because it only uses the high-level wait queue helpers,
+`wait_event_interruptible()` and `wake_up_interruptible()`, without diving
+into how wait queues work internally. The buffer holds only 8 bytes, so
+longer messages take several rounds.
+
+Like a real pipe, the device has no file position. The buffer and the read
+position are shared by all openers and kept in the device structure. `open()`
+calls `stream_open()`, so `lseek()`, `pread()` and `pwrite()` fail with
+`-ESPIPE`, and the driver never uses the `f_pos` argument.
 
 ## build the module
 
@@ -48,9 +55,9 @@ Again, use any tools you favoured. We use **echo** here to demonstrate.
 echo "hello world!" > /dev/pipe_simple_sleep0
 ```
 
-After successfully executing the command, the previous **cat** process will be
-woken up and fetch the contents we just write. After print out the content
-to the terminal, the **cat** process sleeps again to wait for more data.
+After the command succeeds, the previous **cat** process is woken up and
+fetches the contents we just wrote. After printing them to the terminal, the
+**cat** process sleeps again to wait for more data.
 
 ---
 
