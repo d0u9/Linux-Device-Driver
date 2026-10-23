@@ -1,41 +1,61 @@
-#include <stdio.h>
-#include <sys/ioctl.h>
-#include <sys/types.h>
-#include <sys/stat.h>
+// SPDX-License-Identifier: GPL-2.0
+#include <errno.h>
 #include <fcntl.h>
-#include <string.h>
+#include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+#include <sys/ioctl.h>
+#include <unistd.h>
+
+#include "../ioctl_cmd.h"
 
 #define DEV_FILE		"/dev/ioctl"
+#define DEFAULT_NEW_MSG		"Hello, Linux!!\n"
 
-#define NEW_MSG			"Hello, Linux!!\n"
-
-#define IOCTL_IOC_MAGIC		'd'
-#define IOCTL_RESET		_IO(IOCTL_IOC_MAGIC, 0)
-#define IOCTL_HOWMANY		_IOWR(IOCTL_IOC_MAGIC, 1, int)
-#define IOCTL_MESSAGE		_IOW(IOCTL_IOC_MAGIC, 2, int)
-
-struct ioctl_msg_arg {
-	int len;
-	char *msg;
-};
+static void usage(const char *prog)
+{
+	fprintf(stderr,
+		"Usage: %s reset\n"
+		"       %s howmany <count>\n"
+		"       %s message [text]\n",
+		prog, prog, prog);
+}
 
 int main(int argc, char *argv[])
 {
-	char *msg = NEW_MSG;
+	struct ioctl_msg_arg msg_arg;
+	int fd, ret;
 
-	struct ioctl_msg_arg msg_arg = {
-		.len = sizeof(NEW_MSG),
-		.msg = msg
-	};
+	if (argc < 2) {
+		usage(argv[0]);
+		return EXIT_FAILURE;
+	}
 
-	int fd = open(DEV_FILE, O_RDONLY);
+	fd = open(DEV_FILE, O_RDONLY);
+	if (fd < 0) {
+		perror("open " DEV_FILE);
+		return EXIT_FAILURE;
+	}
 
-	/*int err = ioctl(fd, IOCTL_RESET);	//reset*/
-	/*int err = ioctl(fd, IOCTL_HOWMANY, 5);*/
-	int err = ioctl(fd, IOCTL_MESSAGE, &msg_arg);
+	if (!strcmp(argv[1], "reset")) {
+		ret = ioctl(fd, IOCTL_RESET);
+	} else if (!strcmp(argv[1], "howmany") && argc == 3) {
+		ret = ioctl(fd, IOCTL_HOWMANY, strtoul(argv[2], NULL, 0));
+	} else if (!strcmp(argv[1], "message")) {
+		msg_arg.msg = argc == 3 ? argv[2] : DEFAULT_NEW_MSG;
+		msg_arg.len = strlen(msg_arg.msg);
+		ret = ioctl(fd, IOCTL_MESSAGE, &msg_arg);
+	} else {
+		usage(argv[0]);
+		close(fd);
+		return EXIT_FAILURE;
+	}
 
-	printf("retval = %d\n", err);
+	if (ret < 0)
+		fprintf(stderr, "ioctl failed: %s\n", strerror(errno));
+	else
+		printf("retval = %d\n", ret);
 
-	return 0;	
+	close(fd);
+	return ret < 0 ? EXIT_FAILURE : EXIT_SUCCESS;
 }
