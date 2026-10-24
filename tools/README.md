@@ -7,6 +7,7 @@ This directory holds the sources for scripts installed into a separate
 | Source | Installed path | Purpose |
 | --- | --- | --- |
 | `activate` | `$LDD_ROOT/activate` | Bash/Zsh hooks for automatic activation when entering the workspace. |
+| `clangd` | `$LDD_ROOT/.clangd` | Point clangd at the QEMU build for the custom device sources. |
 | `bin/qemu` | `$LDD_ROOT/bin/qemu` | Run the workspace's x86_64 QEMU build. |
 | `bin/boot.sh` | `$LDD_ROOT/bin/boot.sh` | Boot the tutorial guest with the custom emulated devices. |
 | `bin/rebuild_initramfs.sh` | `$LDD_ROOT/bin/rebuild_initramfs.sh` | Rebuild the workspace's initramfs archive. |
@@ -20,10 +21,11 @@ Run from the tutorial checkout, specifying your runtime workspace:
 ```
 
 The installer creates the workspace layout and installs the activation hook,
-QEMU shim, guest launcher, and initramfs build script:
+clangd configuration, QEMU shim, guest launcher, and initramfs build script:
 
 ```text
 LDD_ROOT/
+├── .clangd
 ├── activate
 ├── bin/
 │   ├── qemu
@@ -58,13 +60,13 @@ boot.sh
 
 The initramfs source tree must already be populated, and the kernel and QEMU
 must be built. The launcher uses the workspace's kernel, initramfs, and shared
-directory. See the custom device status below before using them.
+directory.
 
-## Custom device status
+## Custom QEMU devices
 
-[`qemu/`](qemu/README.md) contains the sources of the custom QEMU devices.
-Porting them to QEMU 11.1.2 is still pending; `boot.sh` requires those
-devices and cannot run with a stock QEMU build.
+[`qemu/`](qemu/README.md) contains the custom QEMU devices and `link.sh`,
+which adds them to a QEMU source tree. It is run from the tutorial checkout
+and is not installed into the workspace.
 
 ## Build all examples
 
@@ -94,9 +96,10 @@ python3 tools/tests/test_boot.py
 python3 tools/tests/test_qemu_shim.py
 python3 tools/tests/test_activate.py
 python3 tools/tests/test_check_builds.py
-bash -n tools/install.sh tools/activate tools/bin/qemu tools/bin/boot.sh tools/bin/rebuild_initramfs.sh tools/check_builds.sh
+python3 tools/tests/test_qemu_link.py
+bash -n tools/install.sh tools/activate tools/bin/qemu tools/bin/boot.sh tools/bin/rebuild_initramfs.sh tools/check_builds.sh tools/qemu/link.sh
 ```
 
 The tests use temporary workspaces and mock executables. Bash is required;
 Zsh activation is also checked when Zsh is installed. The tests do not boot
-a guest or build the QEMU patch.
+a guest or build QEMU.

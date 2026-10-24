@@ -65,9 +65,7 @@ implemented by myself for the pure purpose of education.
 It is very convenient to write the long QEMU command in an auxiliary shell script
 to prevent typing it each time.
 
-The custom devices below require the QEMU patch, whose migration to QEMU
-11.1.2 is still pending. Until then, omit the `isa-kmod-edu`, `pci-kmod-edu`,
-and `usb-kmod-edu` device arguments when testing the basic guest setup.
+> TODO: Add the custom ldd devices from tools/qemu/ once they are written.
 
 **RUN ON HOST:**
 
@@ -83,11 +81,7 @@ and `usb-kmod-edu` device arguments when testing the basic guest setup.
    -append 'console=ttyS0' \
    -nographic \
    -virtfs local,path="$LDD_ROOT/shared",mount_tag=ldd,security_model=mapped-xattr \
-   -device isa-kmod-edu,chardev=pr1 \
-   -chardev file,id=pr1,path=/tmp/isa_edu \
-   -device pci-kmod-edu \
    -device qemu-xhci \
-   -device usb-kmod-edu \
    -device edu
 ```
 

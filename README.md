@@ -8,7 +8,7 @@ Examples of Linux device drivers, currently targeting Linux 7.2.x.
 
 - [`docs/`](docs/README.md): tutorial chapters, in reading order.
 - [`examples/`](examples/): kernel module examples and userspace test programs.
-- [`tools/`](tools/README.md): workspace scripts, QEMU patch, and tool tests.
+- [`tools/`](tools/README.md): workspace scripts, custom QEMU devices, and tool tests.
 
 The tutorial checkout is separate from the runtime workspace (`LDD_ROOT`).
 Start with the [workspace setup](docs/00_preface/00_dir_tree.md) to create the

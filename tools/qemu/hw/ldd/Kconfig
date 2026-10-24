@@ -1,0 +1,6 @@
+# Custom devices for the driver examples, one symbol per device, e.g.:
+#
+# config LDD_ISA
+#     bool
+#     default y
+#     depends on ISA_BUS

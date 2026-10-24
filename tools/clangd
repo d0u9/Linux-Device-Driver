@@ -1,0 +1,16 @@
+# Installed as $LDD_ROOT/.clangd. Paths are relative to $LDD_ROOT.
+#
+# The custom QEMU devices are linked into src/qemu/hw/ldd, but clangd
+# resolves the link to the tutorial checkout, so point it at QEMU's build.
+If:
+  PathMatch: shared/Linux-Device-Driver/tools/qemu/.*
+CompileFlags:
+  CompilationDatabase: src/qemu/build
+---
+# QEMU headers rely on qemu/osdep.h, which only .c files include first.
+If:
+  PathMatch:
+    - shared/Linux-Device-Driver/tools/qemu/.*\.h
+    - src/qemu/.*\.h
+CompileFlags:
+  Add: [-include, qemu/osdep.h]

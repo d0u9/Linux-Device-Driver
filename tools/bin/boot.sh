@@ -21,7 +21,7 @@ if [ ! -d "$SHARED" ]; then
   exit 1
 fi
 
-# TODO: Port the custom device patch to QEMU 11.1.2 before using these devices.
+# TODO: Add the ldd devices from tools/qemu/ once they are written.
 "${LDD_ROOT}/bin/qemu" \
     -enable-kvm \
     -kernel "$KERNELPATH" \
@@ -31,10 +31,6 @@ fi
     -nic user,model=e1000,hostfwd=tcp:127.0.0.1:7023-:23 \
     -virtfs local,path="$SHARED",mount_tag=ldd,security_model=mapped-xattr \
     -m 512M \
-    -device isa-kmod-edu,chardev=pr1 \
-    -chardev file,id=pr1,path=/tmp/isa_edu \
-    -device pci-kmod-edu \
     -device qemu-xhci \
-    -device usb-kmod-edu \
     -device edu
 

@@ -1,0 +1,22 @@
+# QEMU coding style for the custom devices, following QEMU's own
+# .editorconfig. These sources are reached through a link from the QEMU
+# tree, so editors do not see QEMU's file. See https://editorconfig.org.
+
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+
+[*.{c,h}]
+indent_style = space
+indent_size = 4
+
+[Kconfig]
+indent_style = space
+indent_size = 4
+
+[meson.build]
+indent_style = space
+indent_size = 2

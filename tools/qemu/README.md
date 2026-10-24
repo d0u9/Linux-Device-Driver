@@ -1,52 +1,32 @@
 # Custom QEMU devices
 
-Sources for the emulated devices used by the driver examples, laid out like the
-QEMU source tree. Copy `hw/` over a QEMU checkout and add the build entries
-below.
+[`hw/ldd/`](hw/ldd) holds the emulated devices used by the driver examples.
+Each device is a source file with its own `LDD_*` symbol in
+[`Kconfig`](hw/ldd/Kconfig) and an entry in [`meson.build`](hw/ldd/meson.build).
 
-| Device | Source | Used by |
-| --- | --- | --- |
-| `isa-kmod-edu` | [`hw/misc/isa_kmod_edu.c`](hw/misc/isa_kmod_edu.c) | `15_short_ioport` to `19_short_irq_probe` |
-| `pci-kmod-edu` | [`hw/misc/pci_kmod_edu.c`](hw/misc/pci_kmod_edu.c) | `20_pci_skel`, `26_msi_interrupt` |
-| `usb-kmod-edu` | [`hw/usb/usb_kmod_edu.c`](hw/usb/usb_kmod_edu.c) | `21_usb_skel` |
+> TODO: No devices are written yet. Add them here and list them in this file.
 
-> TODO: These files still target the QEMU 5.1 API they were written for and do
-> not build against QEMU 11.1.2 yet.
+## Add the devices to QEMU
 
-## Build entries
+**RUN ON HOST**, after cloning QEMU and before configuring it:
 
-Append to `hw/misc/Kconfig`:
-
-```
-config ISA_KMOD_EDU
-    bool
-    default y if TEST_DEVICES
-    depends on ISA_BUS
-
-config PCI_KMOD_EDU
-    bool
-    default y if TEST_DEVICES
-    depends on PCI && MSI_NONBROKEN
+```bash
+./tools/qemu/link.sh "$LDD_ROOT/src/qemu"
 ```
 
-Append to `hw/misc/meson.build`:
+The script links `hw/ldd` into the QEMU source tree and appends
+`subdir('ldd')` to `hw/meson.build` and `source ldd/Kconfig` to
+`hw/Kconfig`. Rerunning it changes nothing. Without an argument it uses
+`$LDD_ROOT/src/qemu`. Then configure and build QEMU as usual.
 
-```
-softmmu_ss.add(when: 'CONFIG_ISA_KMOD_EDU', if_true: files('isa_kmod_edu.c'))
-softmmu_ss.add(when: 'CONFIG_PCI_KMOD_EDU', if_true: files('pci_kmod_edu.c'))
-```
+QEMU must be built in `$LDD_ROOT/src/qemu/build`, the default directory
+used by its `configure`. The `bin/qemu` shim and the installed
+`$LDD_ROOT/.clangd`, which lets clangd find the compile commands for these
+sources, both expect it there.
 
-Append to `hw/usb/Kconfig`:
+To restore the QEMU source tree, for example before checking out another
+QEMU version:
 
-```
-config USB_KMOD_EDU
-    bool
-    default y if TEST_DEVICES
-    depends on USB
-```
-
-Append to `hw/usb/meson.build`:
-
-```
-softmmu_ss.add(when: 'CONFIG_USB_KMOD_EDU', if_true: files('usb_kmod_edu.c'))
+```bash
+./tools/qemu/link.sh --remove "$LDD_ROOT/src/qemu"
 ```

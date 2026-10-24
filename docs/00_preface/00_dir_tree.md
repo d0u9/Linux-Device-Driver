@@ -25,6 +25,7 @@ configured after cloning the tutorial repository.
 tree -L 2 "$LDD_ROOT"
 
 ../../
+├── .clangd                 # Installed clangd configuration for the QEMU devices.
 ├── activate                # Installed shell hook for this workspace.
 ├── bin                     # Installed shims and helper scripts.
 ├── kernels                 # Created by the installer; unused by the current build.
@@ -61,7 +62,8 @@ cd "$LDD_ROOT/shared/Linux-Device-Driver"
 ```
 
 See [workspace tools](../../tools/README.md) for the script inventory and checks.
-The installer installs the qemu shim, activation hook, boot.sh, and rebuild_initramfs.sh;
+The installer installs the qemu shim, activation hook, clangd configuration, boot.sh,
+and rebuild_initramfs.sh;
 it also creates bin, src, kernels, initramfs, and shared if missing, preserving
 their contents. Source trees and build outputs are added in later chapters.
 Repeat these commands after updating the scripts in the tutorial repository.

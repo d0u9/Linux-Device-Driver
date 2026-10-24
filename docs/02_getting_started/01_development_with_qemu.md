@@ -46,8 +46,7 @@ sudo dnf install gcc gcc-c++ binutils make git patch gdb wget \
 
 Download QEMU source from official git:
 
-These instructions target QEMU 11.1.2. The custom device patch still needs
-to be ported and the corresponding driver examples verified against this version.
+These instructions target QEMU 11.1.2.
 
 ```
 mkdir -p "$LDD_ROOT/src"
@@ -57,14 +56,19 @@ cd qemu
 git submodule update --init --recursive
 ```
 
-The driver examples require a patch that adds custom emulated devices.
+The driver examples require custom emulated devices. Add them to the QEMU
+source tree from the tutorial checkout before configuring QEMU:
 
-> TODO: Port the device sources in tools/qemu/ to QEMU 11.1.2 and update the
-> instructions for adding them to the QEMU tree. Verify that isa-kmod-edu, pci-kmod-edu,
-> and usb-kmod-edu are registered and that the corresponding driver examples work.
+**RUN ON HOST:**
 
-Until this is complete, an unpatched build can boot a guest but cannot run
-the examples that require these custom devices or the current boot.sh command.
+```bash
+./tools/qemu/link.sh "$LDD_ROOT/src/qemu"
+```
+
+See [the device sources](../../tools/qemu/README.md) for what the script changes.
+
+> TODO: Write the devices in tools/qemu/hw/ldd/ and verify the corresponding
+> driver examples in the guest.
 
 ## Build QEMU
 
@@ -134,6 +138,18 @@ properly.
 ```
 "$LDD_ROOT/bin/qemu" --version
 ```
+
+If the custom devices were added with `link.sh`, they are listed among the
+available devices, with names starting with `ldd-`:
+
+**RUN ON HOST:**
+
+```bash
+"$LDD_ROOT/bin/qemu" -device help | grep ldd-
+```
+
+No output means the devices were not built into QEMU. Run `link.sh` as
+described above and build QEMU again.
 
 # ¶ The end
 
