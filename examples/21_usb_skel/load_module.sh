@@ -1,24 +1,12 @@
-#! /bin/sh
+#!/bin/sh
+# The USB core creates /dev/skel0, ... itself when the device is bound.
 module="usb_skel"
-device="usb_skel"
-minor=192
-mode="666"
-group=0
 
-function load() {
-    insmod ./$module.ko $* || exit 1
-
-    rm -f /dev/${device}
-
-    major=$(awk -v device="usb" '$2==device {print $1}' /proc/devices)
-    mknod /dev/${device} c $major $minor
-
-    chgrp $group /dev/${device}
-    chmod $mode /dev/${device}
+load() {
+    insmod ./$module.ko "$@" || exit 1
 }
 
-function unload() {
-    rm -f /dev/${device}
+unload() {
     rmmod $module || exit 1
 }
 
@@ -38,4 +26,3 @@ case $arg in
         exit 1
         ;;
 esac
-
