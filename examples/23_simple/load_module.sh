@@ -1,24 +1,24 @@
-#! /bin/sh
+#!/bin/sh
 module="simple"
 device="simple"
 mode="666"
 group=0
 
-function load() {
-    insmod ./$module.ko $* || exit 1
+load() {
+    insmod ./$module.ko "$@" || exit 1
 
-    rm -f /dev/${device}[0-1]
+    rm -f /dev/${device}0 /dev/${device}1
 
     major=$(awk -v device="$device" '$2==device {print $1}' /proc/devices)
     mknod /dev/${device}0 c $major 0
     mknod /dev/${device}1 c $major 1
 
-    chgrp $group /dev/${device}[0-1]
-    chmod $mode /dev/${device}[0-1]
+    chgrp $group /dev/${device}0 /dev/${device}1
+    chmod $mode /dev/${device}0 /dev/${device}1
 }
 
-function unload() {
-    rm -f /dev/${device}[0-1]
+unload() {
+    rm -f /dev/${device}0 /dev/${device}1
     rmmod $module || exit 1
 }
 
@@ -38,4 +38,3 @@ case $arg in
         exit 1
         ;;
 esac
-

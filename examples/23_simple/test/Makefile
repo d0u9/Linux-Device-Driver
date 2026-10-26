@@ -1,12 +1,10 @@
-BIN1 := remap.out
-BIN2 := fault.out
-
+# Static, so it runs in the guest without its libraries.
+BIN := mmap_test.out
 
 .PHONY: all
 all:
-	$(CC) -static -o $(BIN1) remap.c
-	$(CC) -static -o $(BIN2) fault.c
+	$(CC) -Wall -static -o $(BIN) mmap_test.c
 
 .PHONY: clean
 clean:
-	rm -fr $(BIN1) $(BIN2)
+	rm -f $(BIN)
