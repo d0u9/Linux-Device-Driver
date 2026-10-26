@@ -1,170 +1,164 @@
+// SPDX-License-Identifier: GPL-2.0
+#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
+
 #include <linux/module.h>
+#include <linux/moduleparam.h>
 #include <linux/init.h>
 #include <linux/kernel.h>
-#include <linux/fs.h>
+#include <linux/atomic.h>
 #include <linux/cdev.h>
-#include <linux/slab.h>
-#include <linux/list.h>
-#include <linux/uaccess.h>
+#include <linux/cleanup.h>
+#include <linux/fs.h>
 #include <linux/interrupt.h>
-#include <linux/spinlock.h>
-#include <asm/io.h>
+#include <linux/io.h>
+#include <linux/ioport.h>
+#include <linux/minmax.h>
+#include <linux/slab.h>
+#include <linux/string.h>
+#include <linux/uaccess.h>
 
 #include "main.h"
 
-static int major = 0;
-static int short_irq = 6;
-
 static unsigned long base = 0x200;
-unsigned long short_base = 0;
-struct short_dev *dev;
+module_param(base, ulong, 0444);
+MODULE_PARM_DESC(base, "Base I/O port of the ldd-io device (default 0x200)");
 
-static int short_open(struct inode *inode, struct file *filp)
+static int irq = 5;
+module_param(irq, int, 0444);
+MODULE_PARM_DESC(irq, "Interrupt line of the ldd-io device (default 5)");
+
+static dev_t short_devno;
+static struct cdev short_cdev;
+
+/* written by the interrupt handler, read by short_read() */
+static atomic_t short_irqs = ATOMIC_INIT(0);
+static u8 short_last;
+
+/*
+ * The interrupt handler. It runs in hard interrupt context, with
+ * interrupts disabled on this CPU: it must be short and must not sleep.
+ */
+static irqreturn_t short_interrupt(int irqnr, void *dev_id)
 {
-	return 0;
-}
+	u8 status = inb(base + LDD_IO_STATUS);
 
-static int short_release(struct inode *inode, struct file *filp)
-{
-	return 0;
-}
+	/* not raised by our device: let the kernel know */
+	if (!(status & LDD_IO_STATUS_RX_READY))
+		return IRQ_NONE;
 
-static ssize_t short_read(struct file *filp, char __user *buf, size_t count, loff_t *f_pos)
-{
-	unsigned long flags;
-	int val;
-	spin_lock_irqsave(&dev->lock, flags);
-	val = dev->cnt;
-	spin_unlock_irqrestore(&dev->lock, flags);
+	/* take the byte, then acknowledge it so the next one can come in */
+	WRITE_ONCE(short_last, inb(base + LDD_IO_DATA));
+	outb(LDD_IO_STATUS_RX_READY, base + LDD_IO_STATUS);
 
-	if (copy_to_user(buf, &val, sizeof(val))) {
-		return -EFAULT;
-	}
-
-	return count;
-}
-
-static ssize_t short_write(struct file *filp, const char __user *buf, size_t count,
-		loff_t *f_pos)
-{
-	unsigned long port = short_base;
-	unsigned char *kbuf, *ptr;
-	size_t cnt = count;
-
-	kbuf = kmalloc(cnt, GFP_KERNEL);
-
-	if (!kbuf)
-		return -ENOMEM;
-	if (copy_from_user(kbuf, buf, cnt))
-		return -EFAULT;
-
-	ptr = kbuf;
-
-	while (cnt--) {
-		pr_debug("port=%lu(%#lx), val=%d(%#x)\n", port, port, *ptr, *ptr);
-		outb(*(ptr++), port);
-		wmb();
-	}
-
-	kfree(kbuf);
-
-	return count;
-}
-
-static struct file_operations fops = {
-	.owner	 = THIS_MODULE,
-	.read	 = short_read,
-	.write	 = short_write,
-	.open	 = short_open,
-	.release = short_release,
-};
-
-static irqreturn_t irq_service(int irq, void *dev_id)
-{
-	struct short_dev *dev = (struct short_dev*)(dev_id);
-	unsigned long flags;
-
-	if (short_irq != irq)
-		short_irq = -irq;
-
-	spin_lock_irqsave(&dev->lock, flags);
-	dev->cnt++;
-	pr_debug("IRQ triggerd %d times\n", dev->cnt);
-	spin_unlock_irqrestore(&dev->lock, flags);
-
+	atomic_inc(&short_irqs);
 	return IRQ_HANDLED;
 }
 
-static
-int __init m_init(void)
+/* One line: the number of interrupts handled and the last byte received. */
+static ssize_t short_read(struct file *filp, char __user *buf, size_t count,
+			  loff_t *f_pos)
 {
-	int result = 0;
-	short_base = base;
+	char line[40];
+	int len;
 
-	dev = kzalloc(sizeof(struct short_dev), GFP_KERNEL);
-	if (!dev) {
-		pr_err("Allocate device descriptor failed!\n");
-		return -ENOMEM;
+	len = scnprintf(line, sizeof(line), "irqs %d, last 0x%02x\n",
+			atomic_read(&short_irqs), READ_ONCE(short_last));
+
+	return simple_read_from_buffer(buf, count, f_pos, line, len);
+}
+
+/*
+ * Send every byte to DATA. With LOOPBACK set the device also receives the
+ * byte, sets RX_READY and raises an interrupt.
+ */
+static ssize_t short_write(struct file *filp, const char __user *buf,
+			   size_t count, loff_t *f_pos)
+{
+	u8 *kbuf __free(kfree) = NULL;	/* freed on every return */
+
+	count = min_t(size_t, count, SHORT_MAX_WRITE);
+
+	kbuf = memdup_user(buf, count);
+	if (IS_ERR(kbuf))
+		return PTR_ERR(kbuf);	/* __free(kfree) skips error pointers */
+
+	for (size_t i = 0; i < count; i++)
+		outb(kbuf[i], base + LDD_IO_DATA);
+
+	return count;
+}
+
+static const struct file_operations short_fops = {
+	.owner = THIS_MODULE,
+	.read  = short_read,
+	.write = short_write,
+};
+
+/*
+ * The handler may run as soon as request_irq() returns and as long as the
+ * device can interrupt. So everything it uses is set up before, the device
+ * is told to interrupt last, and m_exit() undoes it in reverse order.
+ */
+static int __init m_init(void)
+{
+	int err;
+
+	if (!request_region(base, LDD_IO_SIZE, MODULE_NAME)) {
+		pr_err("cannot get I/O ports %#lx-%#lx\n",
+		       base, base + LDD_IO_SIZE - 1);
+		return -EBUSY;
 	}
-	spin_lock_init(&dev->lock);
 
-	if (!request_region(short_base, SHORT_NR_PORTS, MODULE_NAME)) {
-		pr_err("short_ioport: cannot get I/O port address %#lx\n",
-		       short_base);
-		result = -ENODEV;
-		goto out;
+	/* dev_id identifies this handler; free_irq() must pass the same */
+	err = request_irq(irq, short_interrupt, 0, MODULE_NAME, &short_cdev);
+	if (err) {
+		pr_err("cannot get IRQ %d: %d\n", irq, err);
+		goto err_release;
 	}
 
-	if (short_irq >= 0) {
-		result = request_irq(short_irq, irq_service, 0,
-				     MODULE_NAME, dev);
-		if (result) {
-			pr_err("Request irq %d failed\n", short_irq);
-			short_irq = -1;
-			result = -ENODEV;
-			goto unreg_region;
-		}
-
-		// enable interrupt
-		outb(1, short_base + 1);
-		wmb();
+	err = alloc_chrdev_region(&short_devno, 0, 1, MODULE_NAME);
+	if (err < 0) {
+		pr_err("cannot get major number: %d\n", err);
+		goto err_free_irq;
 	}
 
-	result = register_chrdev(major, MODULE_NAME, &fops);
-	if (result < 0) {
-		pr_err("cannot get major number!\n");
-		goto unreg_irq;
+	cdev_init(&short_cdev, &short_fops);
+	short_cdev.owner = THIS_MODULE;
+
+	err = cdev_add(&short_cdev, short_devno, 1);
+	if (err) {
+		pr_err("adding cdev failed: %d\n", err);
+		goto err_unregister;
 	}
-	major = (major == 0) ? result : major;
+
+	/* bytes written to DATA come back as input and raise an interrupt */
+	outb(LDD_IO_CTRL_IRQ_EN | LDD_IO_CTRL_LOOPBACK, base + LDD_IO_CTRL);
 
 	return 0;
 
-unreg_irq:
-	free_irq(short_irq, NULL);
-
-unreg_region:
-	release_region(short_base, SHORT_NR_PORTS);
-
-out:
-	kfree(dev);
-	return result;
+err_unregister:
+	unregister_chrdev_region(short_devno, 1);
+err_free_irq:
+	free_irq(irq, &short_cdev);
+err_release:
+	release_region(base, LDD_IO_SIZE);
+	return err;
 }
 
-static
-void __exit m_exit(void)
+static void __exit m_exit(void)
 {
-	outb(0, short_base + 1);
-	wmb();
-	unregister_chrdev(major, MODULE_NAME);
-	free_irq(short_irq, dev);
-	release_region(short_base, SHORT_NR_PORTS);
-	kfree(dev);
-}
+	/* stop the device first, then the handler can go */
+	outb(0, base + LDD_IO_CTRL);
+	free_irq(irq, &short_cdev);	/* waits for a running handler */
 
+	cdev_del(&short_cdev);
+	unregister_chrdev_region(short_devno, 1);
+	release_region(base, LDD_IO_SIZE);
+}
 
 module_init(m_init);
 module_exit(m_exit);
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("d0u9");
-MODULE_DESCRIPTION("Interrupt handle");
+MODULE_DESCRIPTION("Interrupt handling with the ldd-io device");
