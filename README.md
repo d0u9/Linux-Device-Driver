@@ -23,6 +23,10 @@ Current test baseline:
 
 Other kernel versions and host distributions are not tested.
 
+The examples target 64-bit kernels (x86_64). Differences on 32-bit kernels,
+such as 64-bit MMIO accessors that are missing or split in two, are not
+covered.
+
 Set `KDIR` environment variable to the Linux kernel source dir, and export 
 it to your local shell.
 
