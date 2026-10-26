@@ -7,6 +7,7 @@ Each device is a source file with its own `LDD_*` symbol in
 | Device   | Source                    | Description              |
 |----------|---------------------------|--------------------------|
 | `ldd-io` | [`hw/ldd/io.c`](hw/ldd/io.c) | [`ldd-io.md`](ldd-io.md) |
+| `ldd-usb` | [`hw/ldd/usb.c`](hw/ldd/usb.c) | [`ldd-usb.md`](ldd-usb.md) |
 
 ## Add the devices to QEMU
 
