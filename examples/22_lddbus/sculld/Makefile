@@ -1,5 +1,4 @@
 ifneq ($(KERNELRELEASE),)
-    ccflags-y := -DENABLE_DEBUG
     sculld-objs := main.o
     obj-m := sculld.o
     CFLAGS_main.o := -DDEBUG -I$(src)/../

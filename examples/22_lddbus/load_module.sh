@@ -1,25 +1,15 @@
-#! /bin/sh
-module="lddbus"
-device="lddbus"
-minor=192
-mode="666"
-group=0
+#!/bin/sh
+# Load the bus first: sculld uses its symbols. Unload in reverse.
+# lddbus.ko and sculld.ko are expected in the current directory.
 
-function load() {
-    insmod ./$module.ko $* || exit 1
-
-    rm -f /dev/${device}
-
-    major=$(awk -v device="usb" '$2==device {print $1}' /proc/devices)
-    mknod /dev/${device} c $major $minor
-
-    chgrp $group /dev/${device}
-    chmod $mode /dev/${device}
+load() {
+    insmod ./lddbus.ko || exit 1
+    insmod ./sculld.ko "$@" || { rmmod lddbus; exit 1; }
 }
 
-function unload() {
-    rm -f /dev/${device}
-    rmmod $module || exit 1
+unload() {
+    rmmod sculld
+    rmmod lddbus || exit 1
 }
 
 arg=${1:-"load"}
@@ -38,4 +28,3 @@ case $arg in
         exit 1
         ;;
 esac
-

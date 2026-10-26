@@ -1,45 +1,32 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _LDDBUS_H
 #define _LDDBUS_H
 
-/*
- * Definitions for the virtual LDD bus.
- *
- * $Id: lddbus.h,v 1.4 2004/08/20 18:49:44 corbet Exp $
- */
+#include <linux/device.h>
 
-//extern struct device ldd_bus;
-extern struct bus_type ldd_bus_type;
+/* The virtual LDD bus, and the class its devices' /dev nodes go in. */
+extern const struct bus_type ldd_bus_type;
 extern struct class *ldd_class;
 
-
-/*
- * The LDD driver type.
- */
-
+/* A driver for devices on the LDD bus. */
 struct ldd_driver {
 	char *version;
-	struct module *module;
 	struct device_driver driver;
-	struct driver_attribute version_attr;
 };
 
-#define to_ldd_driver(drv) container_of(drv, struct ldd_driver, driver);
+#define to_ldd_driver(drv) container_of(drv, struct ldd_driver, driver)
 
-/*
- * A device type for things "plugged" into the LDD bus.
- */
-
+/* A device "plugged" into the LDD bus. */
 struct ldd_device {
 	char *name;
-	struct ldd_driver *driver;
 	struct device dev;
 };
 
-#define to_ldd_device(dev) container_of(dev, struct ldd_device, dev);
+#define to_ldd_device(d) container_of(d, struct ldd_device, dev)
 
-extern int register_ldd_device(struct ldd_device *);
-extern void unregister_ldd_device(struct ldd_device *);
-extern int register_ldd_driver(struct ldd_driver *);
-extern void unregister_ldd_driver(struct ldd_driver *);
+int register_ldd_device(struct ldd_device *ldddev);
+void unregister_ldd_device(struct ldd_device *ldddev);
+int register_ldd_driver(struct ldd_driver *driver);
+void unregister_ldd_driver(struct ldd_driver *driver);
 
 #endif
