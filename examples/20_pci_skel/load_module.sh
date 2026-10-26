@@ -1,23 +1,12 @@
-#! /bin/sh
+#!/bin/sh
+# No device node: the driver binds to the PCI device and only logs.
 module="pci_skel"
-device="pci_skel"
-mode="666"
-group=0
 
-function load() {
-    insmod ./$module.ko $* || exit 1
-
-    rm -f /dev/${device}
-
-    major=$(awk -v device="$device" '$2==device {print $1}' /proc/devices)
-    mknod /dev/${device} c $major 0
-
-    chgrp $group /dev/${device}
-    chmod $mode /dev/${device}
+load() {
+    insmod ./$module.ko "$@" || exit 1
 }
 
-function unload() {
-    rm -f /dev/${device}
+unload() {
     rmmod $module || exit 1
 }
 
@@ -37,4 +26,3 @@ case $arg in
         exit 1
         ;;
 esac
-

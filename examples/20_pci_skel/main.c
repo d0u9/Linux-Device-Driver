@@ -1,132 +1,157 @@
-#include <linux/kernel.h>
+// SPDX-License-Identifier: GPL-2.0
 #include <linux/module.h>
-#include <linux/pci.h>
 #include <linux/init.h>
+#include <linux/kernel.h>
+#include <linux/io.h>
+#include <linux/pci.h>
 
 #include "main.h"
 
-#define PCI_VENDOR_ID_QEMU		0x1234
-#define PCI_KMOD_EDU_VENDOR_ID		PCI_VENDOR_ID_QEMU
-#define PCI_KMOD_EDU_DEVICE_ID		0x7863
-
-#define PCI_KMOD_EDU_BAR_NUM		6
-
-static struct pci_device_id ids[] = {
-	{ PCI_DEVICE(PCI_KMOD_EDU_VENDOR_ID, PCI_KMOD_EDU_DEVICE_ID), },
-	{ 0, }
+/*
+ * The devices this driver handles. The PCI core calls skel_probe() for
+ * every device whose IDs match an entry. MODULE_DEVICE_TABLE() exports the
+ * table as module aliases, so that udev or mdev can load the module when
+ * such a device shows up.
+ */
+static const struct pci_device_id skel_ids[] = {
+	{ PCI_DEVICE(EDU_VENDOR_ID, EDU_DEVICE_ID) },
+	{ }
 };
-MODULE_DEVICE_TABLE(pci, ids);
+MODULE_DEVICE_TABLE(pci, skel_ids);
 
-static int map_single_bar(struct pci_dev *dev, int idx)
+/* Print what the configuration space tells about the device. */
+static void skel_show_config(struct pci_dev *pdev)
 {
-	resource_size_t bar_start;
-	resource_size_t bar_len;
-	resource_size_t map_len;
+	u8 revision, line, pin;
 
-	bar_start = pci_resource_start(dev, idx);
-	bar_len = pci_resource_len(dev, idx);
-	map_len = bar_len;
+	pci_read_config_byte(pdev, PCI_REVISION_ID, &revision);
+	pci_read_config_byte(pdev, PCI_INTERRUPT_PIN, &pin);
+	/*
+	 * PCI_INTERRUPT_LINE is a scratch register filled in by the firmware
+	 * for older systems. The interrupt the kernel really assigned is
+	 * pdev->irq; drivers use that one.
+	 */
+	pci_read_config_byte(pdev, PCI_INTERRUPT_LINE, &line);
 
-	if (!bar_len) {
-		return 0;
-	}
+	dev_info(&pdev->dev, "vendor %04x device %04x revision %02x\n",
+		 pdev->vendor, pdev->device, revision);
+	dev_info(&pdev->dev, "interrupt pin %c, line %u, irq %u\n",
+		 pin ? 'A' + pin - 1 : '-', line, pdev->irq);
 
-	pr_info("BAR%d at 0x%llx mapped at 0x%p, length=%llu(/%llx)\n", idx,
-		(u64)bar_start, NULL, (u64)map_len, (u64)bar_len);
+	/*
+	 * Walk the capability list for the PCI Express capability.
+	 * pci_is_pcie() is the shorthand for this test.
+	 */
+	if (pci_find_capability(pdev, PCI_CAP_ID_EXP))
+		dev_info(&pdev->dev, "PCI Express device\n");
+	else
+		dev_info(&pdev->dev, "conventional PCI device\n");
 
-	return (int)map_len;
-}
-
-static int map_bars(struct pci_dev *dev)
-{
-	int i, rv;
-	int bar_len;
-
-	for (i = 0; i < PCI_KMOD_EDU_BAR_NUM; i++) {
-		bar_len = map_single_bar(dev, i);
-		if (bar_len == 0) {
+	for (int bar = 0; bar < PCI_STD_NUM_BARS; bar++) {
+		if (!pci_resource_len(pdev, bar))
 			continue;
-		} else if (bar_len < 0) {
-			rv = -EINVAL;
-			goto fail;
-		}
+		dev_info(&pdev->dev, "BAR%d: %pR\n", bar,
+			 pci_resource_n(pdev, bar));
 	}
+}
+
+/* Talk to the device through BAR 0 to show that the mapping works. */
+static void skel_show_edu(struct pci_dev *pdev, void __iomem *regs)
+{
+	u32 id = ioread32(regs + EDU_REG_ID);
+	u32 val;
+
+	dev_info(&pdev->dev, "edu version %u.%u (id %#010x)\n",
+		 id >> 24, (id >> 16) & 0xff, id);
+
+	iowrite32(0x12345678, regs + EDU_REG_LIVENESS);
+	val = ioread32(regs + EDU_REG_LIVENESS);
+	dev_info(&pdev->dev, "liveness: wrote 0x12345678, read %#010x%s\n",
+		 val, val == ~0x12345678U ? "" : " (wrong)");
+}
+
+static int skel_probe(struct pci_dev *pdev, const struct pci_device_id *id)
+{
+	void __iomem *regs;
+	int err;
+
+	/*
+	 * Enable, claim and map by hand, undoing each step on failure and in
+	 * skel_remove(). The managed pcim_enable_device() and
+	 * pcim_iomap_region() do the same and are undone automatically when
+	 * the driver is unbound.
+	 */
+	err = pci_enable_device(pdev);
+	if (err) {
+		dev_err(&pdev->dev, "cannot enable device: %d\n", err);
+		return err;
+	}
+
+	/* claim the BARs: shows up as "pci_skel" in /proc/iomem */
+	err = pci_request_regions(pdev, MODULE_NAME);
+	if (err) {
+		dev_err(&pdev->dev, "cannot claim BARs: %d\n", err);
+		goto err_disable;
+	}
+
+	/* map all of BAR 0; works for memory and I/O BARs alike */
+	regs = pci_iomap(pdev, 0, 0);
+	if (!regs) {
+		dev_err(&pdev->dev, "cannot map BAR 0\n");
+		err = -ENOMEM;
+		goto err_release;
+	}
+
+	/* keep the mapping for skel_remove() */
+	pci_set_drvdata(pdev, regs);
+
+	skel_show_config(pdev);
+	skel_show_edu(pdev, regs);
 
 	return 0;
 
-fail:
-	// unmap_bars(xdev, dev);
-	return rv;
+err_release:
+	pci_release_regions(pdev);
+err_disable:
+	pci_disable_device(pdev);
+	return err;
 }
 
-static int probe(struct pci_dev *dev, const struct pci_device_id *id)
+/* Called when the device goes away or the driver is unbound or unloaded. */
+static void skel_remove(struct pci_dev *pdev)
 {
-	int rv;
-	u8 revision, irq;
-	u16 cap;
+	void __iomem *regs = pci_get_drvdata(pdev);
 
-	pr_debug("New pci device probing!\n");
-
-	if (pci_enable_device(dev)) {
-		dev_err(&dev->dev, "can't enable PCI device\n");
-		return -ENODEV;
-	}
-
-	pci_read_config_byte(dev, PCI_REVISION_ID, &revision);
-	pr_debug("Revision: %d\n", revision);
-
-	pci_read_config_byte(dev, PCI_INTERRUPT_LINE, &irq);
-	pr_debug("IRQ: %d\n", irq);
-	pci_read_config_byte(dev, PCI_INTERRUPT_PIN, &irq);
-	pr_debug("IRQ: %d\n", irq);
-
-	if (pci_find_capability(dev, PCI_CAP_ID_EXP)) {
-		pr_debug("CAP PCI_CAP_ID_EXP: on\n");
-		pcie_capability_read_word(dev, PCI_EXP_FLAGS, &cap);
-		pr_debug("PCI_EXP_FLAGS: %x, PCI_EXP_FLAGS_VERS=%d\n",
-			 cap, cap & PCI_EXP_FLAGS_VERS);
-	} else {
-		pr_debug("CAP PCI_CAP_ID_EXP: off\n");
-	}
-
-	rv = map_bars(dev);
-	if (rv < 0) {
-		dev_err(&dev->dev, "can't map bars\n");
-		pci_disable_device(dev);
-		return rv;
-	}
-
-	return 0;
+	pci_iounmap(pdev, regs);
+	pci_release_regions(pdev);
+	pci_disable_device(pdev);
 }
 
-static void remove(struct pci_dev *dev)
-{
-	pci_disable_device(dev);
-}
-
-static struct pci_driver pci_driver = {
-	.name		= MODULE_NAME,
-	.id_table	= ids,
-	.probe		= probe,
-	.remove		= remove,
+static struct pci_driver skel_driver = {
+	.name     = MODULE_NAME,
+	.id_table = skel_ids,
+	.probe    = skel_probe,
+	.remove   = skel_remove,
 };
 
-static
-int __init m_init(void)
+/*
+ * Loading the module only registers the driver; probing happens when a
+ * matching device is found, now or later. module_pci_driver(skel_driver)
+ * generates exactly these two functions.
+ */
+static int __init m_init(void)
 {
-	return pci_register_driver(&pci_driver);
+	return pci_register_driver(&skel_driver);
 }
 
-static
-void __exit m_exit(void)
+static void __exit m_exit(void)
 {
-	pci_unregister_driver(&pci_driver);
+	pci_unregister_driver(&skel_driver);
 }
-
 
 module_init(m_init);
 module_exit(m_exit);
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("d0u9");
-MODULE_DESCRIPTION("PCI Driver skel");
+MODULE_DESCRIPTION("PCI driver skeleton for QEMU's edu device");
