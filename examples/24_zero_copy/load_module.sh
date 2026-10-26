@@ -1,11 +1,11 @@
-#! /bin/sh
+#!/bin/sh
 module="zero_copy"
 device="zero_copy"
 mode="666"
 group=0
 
-function load() {
-    insmod ./$module.ko $* || exit 1
+load() {
+    insmod ./$module.ko "$@" || exit 1
 
     rm -f /dev/${device}0
 
@@ -13,9 +13,10 @@ function load() {
     mknod /dev/${device}0 c $major 0
 
     chgrp $group /dev/${device}0
+    chmod $mode /dev/${device}0
 }
 
-function unload() {
+unload() {
     rm -f /dev/${device}0
     rmmod $module || exit 1
 }
@@ -36,4 +37,3 @@ case $arg in
         exit 1
         ;;
 esac
-

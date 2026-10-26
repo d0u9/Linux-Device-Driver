@@ -1,10 +1,10 @@
+# Static, so it runs in the guest without its libraries.
 BIN := zero.out
-
 
 .PHONY: all
 all:
-	$(CC) -static -o $(BIN) main.c -I../
+	$(CC) -Wall -static -I.. -o $(BIN) main.c
 
 .PHONY: clean
 clean:
-	rm -fr $(BIN)
+	rm -f $(BIN)

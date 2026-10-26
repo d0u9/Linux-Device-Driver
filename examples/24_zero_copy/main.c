@@ -1,182 +1,212 @@
-#include <linux/kernel.h>
+// SPDX-License-Identifier: GPL-2.0
 #include <linux/module.h>
-#include <linux/slab.h>
 #include <linux/init.h>
+#include <linux/kernel.h>
 #include <linux/cdev.h>
 #include <linux/fs.h>
+#include <linux/highmem.h>
 #include <linux/mm.h>
-#include <asm/io.h>
-#include <linux/sched.h>
-#include <linux/mm_types.h>
+#include <linux/mutex.h>
+#include <linux/slab.h>
+#include <linux/string.h>
+#include <linux/uaccess.h>
 
 #include "main.h"
 #include "ioc_cmd.h"
 
+static dev_t devno;
+static struct cdev zc_cdev;
 
-static int major;
-static struct zero_copy_dev zdev;
-
-static int zero_open(struct inode *inode, struct file *filp)
+/*
+ * Release the pinned pages. The kernel may have written to them, behind
+ * the back of the user's page tables, so mark them dirty first: otherwise
+ * the writes could be dropped when the pages are reclaimed or written back.
+ * Called with ctx->lock held, or from release when nobody else can.
+ */
+static void zc_unpin(struct zc_ctx *ctx)
 {
-	struct zero_copy_ctx *ctx = kzalloc(sizeof(*ctx), GFP_KERNEL);
-	filp->private_data = ctx;
+	if (!ctx->pages)
+		return;
 
-	init_waitqueue_head(&ctx->get_queue);
-	init_waitqueue_head(&ctx->put_queue);
+	unpin_user_pages_dirty_lock(ctx->pages, ctx->npages, true);
+	kfree(ctx->pages);
+	ctx->pages = NULL;
+	ctx->npages = 0;
+}
+
+static long zc_pin(struct zc_ctx *ctx, struct zc_buf __user *arg)
+{
+	struct page **pages;
+	struct zc_buf buf;
+	int npages, pinned;
+
+	if (copy_from_user(&buf, arg, sizeof(buf)))
+		return -EFAULT;
+	if (!PAGE_ALIGNED(buf.addr) || !PAGE_ALIGNED(buf.len) || !buf.len ||
+	    buf.len > ZC_MAX_PAGES * PAGE_SIZE)
+		return -EINVAL;
+	if (ctx->pages)
+		return -EBUSY;
+
+	npages = buf.len >> PAGE_SHIFT;
+	pages = kmalloc_objs(*pages, npages);
+	if (!pages)
+		return -ENOMEM;
+
+	/*
+	 * Find the pages behind the user addresses, faulting them in if
+	 * needed, and pin them: they stay in memory, and stay the pages the
+	 * process sees, until unpinned. FOLL_WRITE because the kernel writes
+	 * to them, FOLL_LONGTERM because they are kept across system calls.
+	 * Older drivers used get_user_pages_fast() and put_page(); a pin is
+	 * counted apart from other references, so memory management can tell
+	 * a page is in direct use and leave it alone.
+	 */
+	pinned = pin_user_pages_fast(buf.addr, npages,
+				     FOLL_WRITE | FOLL_LONGTERM, pages);
+	if (pinned != npages) {
+		if (pinned > 0)
+			unpin_user_pages(pages, pinned);
+		kfree(pages);
+		return pinned < 0 ? pinned : -EFAULT;
+	}
+
+	ctx->pages = pages;
+	ctx->npages = npages;
+	pr_debug("pinned %d pages at %#llx\n", npages, buf.addr);
+	return 0;
+}
+
+/* Fill every pinned page with a value, through the kernel's own mapping. */
+static long zc_fill(struct zc_ctx *ctx, u32 __user *arg)
+{
+	void *addr;
+	u32 val;
+	int i;
+
+	if (get_user(val, arg))
+		return -EFAULT;
+	if (!ctx->pages)
+		return -EINVAL;
+
+	for (i = 0; i < ctx->npages; i++) {
+		/* a kernel address for the page, valid until kunmap_local() */
+		addr = kmap_local_page(ctx->pages[i]);
+		memset32(addr, val, PAGE_SIZE / 4);
+		kunmap_local(addr);
+		/* for CPUs whose caches can alias; nothing to do on x86 */
+		flush_dcache_page(ctx->pages[i]);
+	}
 
 	return 0;
 }
 
-static int zero_release(struct inode *inode, struct file *filp)
+/* Add up the first word of every pinned page, as user space left them. */
+static long zc_sum(struct zc_ctx *ctx, u32 __user *arg)
 {
+	u32 *addr, sum = 0;
 	int i;
-	struct zero_copy_ctx *ctx = filp->private_data;
 
-	for (i = 0; i < ctx->pagenr; i++) {
-		if (ctx->pages[i]) {
-			put_page(ctx->pages[i]);
-		}
+	if (!ctx->pages)
+		return -EINVAL;
+
+	for (i = 0; i < ctx->npages; i++) {
+		addr = kmap_local_page(ctx->pages[i]);
+		pr_debug("page %d: %#x\n", i, addr[0]);
+		sum += addr[0];
+		kunmap_local(addr);
 	}
 
+	return put_user(sum, arg);
+}
+
+static long zc_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
+{
+	struct zc_ctx *ctx = filp->private_data;
+	void __user *uarg = (void __user *)arg;
+	long ret;
+
+	mutex_lock(&ctx->lock);
+	switch (cmd) {
+	case ZC_PIN:
+		ret = zc_pin(ctx, uarg);
+		break;
+	case ZC_FILL:
+		ret = zc_fill(ctx, uarg);
+		break;
+	case ZC_SUM:
+		ret = zc_sum(ctx, uarg);
+		break;
+	case ZC_UNPIN:
+		zc_unpin(ctx);
+		ret = 0;
+		break;
+	default:
+		ret = -ENOTTY;
+	}
+	mutex_unlock(&ctx->lock);
+
+	return ret;
+}
+
+static int zc_open(struct inode *inode, struct file *filp)
+{
+	struct zc_ctx *ctx;
+
+	ctx = kzalloc_obj(*ctx);
+	if (!ctx)
+		return -ENOMEM;
+
+	mutex_init(&ctx->lock);
+	filp->private_data = ctx;
+	return 0;
+}
+
+static int zc_release(struct inode *inode, struct file *filp)
+{
+	struct zc_ctx *ctx = filp->private_data;
+
+	zc_unpin(ctx);
+	mutex_destroy(&ctx->lock);
 	kfree(ctx);
 	return 0;
 }
 
-static long ioc_open(struct file *filp, struct ioc_msg __user *arg)
-{
-	int i, ret = 0, pinned, npages;
-	struct page **pages;
-	struct zero_copy_ctx *ctx = filp->private_data;
-	struct ioc_msg *msg = kzalloc(sizeof(*msg), GFP_KERNEL);
-
-	if (copy_from_user(msg, arg, sizeof(*msg))) {
-	    pr_debug("Error copy from userspace\n");
-	    return -EFAULT;
-	}
-
-	npages = msg->len >> PAGE_SHIFT;
-	pages = kmalloc_array(npages, sizeof(*pages), GFP_KERNEL);
-	pinned = get_user_pages_fast(msg->addr, npages, FOLL_WRITE, pages);
-	if (pinned < 0) {
-		ret = pinned;
-		pr_debug("pinned < 0\n");
-		goto out;
-	} else if (pinned != npages) {
-		ret = -EFAULT;
-		goto put_pages;
-	}
-	ctx->pages = pages;
-	ctx->pagenr = pinned;
-	ctx->addr = msg->addr;
-	pr_debug("addr=%#lx, len=%#lx, pagenr=%d\n", msg->addr, msg->len, pinned);
-
-	kfree(msg);
-	return 0;
-
-put_pages:
-	for (i = 0; i < pinned; i++) {
-		if (pages[i])
-			put_page(pages[i]);
-	}
-out:
-	kfree(pages);
-	kfree(msg);
-	return ret;
-}
-
-static long ioc_get(struct file *filp, unsigned long intval)
-{
-	int i;
-	void *addr;
-	u32 val = (u32)intval;
-	struct zero_copy_ctx *ctx = filp->private_data;
-
-	for (i = 0; i < ctx->pagenr; i++) {
-		addr = page_to_virt(ctx->pages[i]);
-		memset32(addr, val, PAGE_SIZE / 4);
-	}
-
-	return 0;
-}
-
-static long ioc_put(struct file *filp)
-{
-	int i;
-	void *addr;
-	struct zero_copy_ctx *ctx = filp->private_data;
-
-	for (i = 0; i < ctx->pagenr; i++) {
-		addr = page_to_virt(ctx->pages[i]);
-		pr_debug("%#x\n", *((u32*)addr));
-	}
-
-	return 0;	
-}
-
-static long zero_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
-{
-	if (_IOC_TYPE(cmd) != IOCTL_IOC_MAGIC)
-		return -ENOTTY;
-
-	switch (cmd) {
-	case IOCTL_OPEN:
-		pr_debug("IOCTL_OPEN\n");
-		return ioc_open(filp, (struct ioc_msg __user *)arg);
-	case IOCTL_GET:
-		pr_debug("IOCTL_GET\n");
-		return ioc_get(filp, arg);
-	case IOCTL_PUT:
-		pr_debug("IOCTL_PUT\n");
-		return ioc_put(filp);
-	default:
-		return -ENOTTY;
-	}
-
-	return 0;
-}
-
-static struct file_operations fops = {
-	.owner   = THIS_MODULE,
-	.open    = zero_open,
-	.release = zero_release,
-	.unlocked_ioctl = zero_ioctl,
+static const struct file_operations zc_fops = {
+	.owner          = THIS_MODULE,
+	.open           = zc_open,
+	.release        = zc_release,
+	.unlocked_ioctl = zc_ioctl,
 };
 
-static
-int __init m_init(void)
+static int __init m_init(void)
 {
-	int result;
-	dev_t devno;
+	int err;
 
-	result = alloc_chrdev_region(&devno, 0, DEV_NR, MODULE_NAME);
-	if (result < 0) {
-		pr_err("Unable to get major devno\n");
-		return result;
-	}
+	err = alloc_chrdev_region(&devno, 0, 1, MODULE_NAME);
+	if (err)
+		return err;
 
-	major = MAJOR(devno);
-	devno = MKDEV(major, 0);
-	cdev_init(&zdev.cdev, &fops);
-	zdev.cdev.owner = THIS_MODULE;
-	if (cdev_add(&zdev.cdev, devno, 1)) {
-		pr_notice("Error when adding simple%d\n", 0);
-		return -EFAULT;
+	cdev_init(&zc_cdev, &zc_fops);
+	zc_cdev.owner = THIS_MODULE;
+	err = cdev_add(&zc_cdev, devno, 1);
+	if (err) {
+		unregister_chrdev_region(devno, 1);
+		return err;
 	}
 
 	return 0;
 }
 
-static
-void __exit m_exit(void)
+static void __exit m_exit(void)
 {
-	cdev_del(&zdev.cdev);
-	unregister_chrdev_region(MKDEV(major, 0), DEV_NR);
+	cdev_del(&zc_cdev);
+	unregister_chrdev_region(devno, 1);
 }
-
 
 module_init(m_init);
 module_exit(m_exit);
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("d0u9");
-MODULE_DESCRIPTION("Access userspace memory directly");
+MODULE_DESCRIPTION("Access user space memory directly");

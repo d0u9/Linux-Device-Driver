@@ -1,19 +1,18 @@
+/* SPDX-License-Identifier: GPL-2.0 */
 #ifndef _MAIN_H
 #define _MAIN_H
 
+#include <linux/mm_types.h>
+#include <linux/mutex.h>
+
 #define MODULE_NAME		"zero_copy"
-#define DEV_NR			1
+#define ZC_MAX_PAGES		16	/* largest buffer that can be pinned */
 
-struct zero_copy_dev {
-	struct cdev cdev;
-};
-
-struct zero_copy_ctx {
-	int pagenr;
-	struct page **pages;
-	unsigned long addr;
-	wait_queue_head_t get_queue;
-	wait_queue_head_t put_queue;
+/* One per open file. */
+struct zc_ctx {
+	struct mutex lock;		/* protects pages and npages */
+	struct page **pages;		/* the pinned user pages, or NULL */
+	int npages;
 };
 
 #endif
