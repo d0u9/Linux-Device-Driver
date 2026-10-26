@@ -1,131 +1,296 @@
+// SPDX-License-Identifier: GPL-2.0
+#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
+
 #include <linux/module.h>
+#include <linux/moduleparam.h>
 #include <linux/init.h>
 #include <linux/kernel.h>
-#include <linux/fs.h>
 #include <linux/cdev.h>
+#include <linux/cleanup.h>
+#include <linux/fs.h>
+#include <linux/io.h>
+#include <linux/iopoll.h>
+#include <linux/ioport.h>
+#include <linux/minmax.h>
+#include <linux/mutex.h>
+#include <linux/sched/signal.h>
 #include <linux/slab.h>
-#include <linux/list.h>
+#include <linux/string.h>
 #include <linux/uaccess.h>
-#include <linux/interrupt.h>
-#include <asm/io.h>
+#include <linux/unaligned.h>
 
 #include "main.h"
 
-static int major = 0;
-
 static unsigned long base = 0x200;
-// static unsigned long base = 0x378;
-unsigned long short_base = 0;
-void __iomem *short_iomem;
+module_param(base, ulong, 0444);
+MODULE_PARM_DESC(base, "Base I/O port of the ldd-io device (default 0x200)");
 
-static int short_open(struct inode *inode, struct file *filp)
+/*
+ * The ports as an __iomem cookie from ioport_map(). Every register access
+ * below goes through ioread*()/iowrite*() on this pointer, never through
+ * inb()/outb() on the port number. On x86 the cookie is not a mapping:
+ * the accessors recognise it and still issue in/out instructions.
+ */
+static void __iomem *io;
+
+static dev_t short_devno;
+static struct cdev short_cdev;
+static DEFINE_MUTEX(short_lock);	/* one register sequence at a time */
+
+/* ---- /dev/short_port_remap_data: LEDs out, polled bytes in ---- */
+
+/* Take the bytes that are ready, up to count. Called with short_lock held. */
+static size_t data_take(u8 *kbuf, size_t count)
 {
-	return 0;
+	size_t n = 0;
+
+	while (n < count &&
+	       (ioread8(io + LDD_IO_STATUS) & LDD_IO_STATUS_RX_READY)) {
+		/* read DATA before acknowledging, see ldd-io.md */
+		kbuf[n++] = ioread8(io + LDD_IO_DATA);
+		iowrite8(LDD_IO_STATUS_RX_READY, io + LDD_IO_STATUS);
+	}
+
+	return n;
 }
 
-static int short_release(struct inode *inode, struct file *filp)
+/*
+ * Receive up to count bytes. Waits for the first byte by polling STATUS,
+ * then returns what is ready without waiting again.
+ */
+static ssize_t data_read(struct file *filp, char __user *buf, size_t count,
+			 loff_t *f_pos)
 {
-	return 0;
-}
+	u8 kbuf[64];
+	size_t n = 0;
+	u8 status;
 
-static ssize_t short_read(struct file *filp, char __user *buf, size_t count, loff_t *f_pos)
-{
-	char v;
-
-	if (*f_pos > 0) {
+	if (count == 0)
 		return 0;
+	count = min(count, sizeof(kbuf));
+
+	for (;;) {
+		scoped_cond_guard(mutex_intr, return -ERESTARTSYS, &short_lock)
+			n = data_take(kbuf, count);
+
+		if (n)
+			break;
+		if (filp->f_flags & O_NONBLOCK)
+			return -EAGAIN;
+
+		/*
+		 * Wait for RX_READY: read STATUS at most SHORT_POLL_US apart, give
+		 * up after SHORT_POLL_SLICE_US so that a signal can stop the
+		 * reader. readx_poll_timeout() cannot be interrupted itself.
+		 * STATUS is read without short_lock; reading it has no side
+		 * effect, and the bytes are taken under the lock above.
+		 */
+		readx_poll_timeout(ioread8, io + LDD_IO_STATUS, status,
+				   status & LDD_IO_STATUS_RX_READY,
+				   SHORT_POLL_US, SHORT_POLL_SLICE_US);
+		if (signal_pending(current))
+			return -ERESTARTSYS;
 	}
 
-	v = ioread8(short_iomem);
-	rmb();
-
-	(*f_pos)++;
-
-	if (copy_to_user(buf, &v, 1)) {
+	if (copy_to_user(buf, kbuf, n))
 		return -EFAULT;
-	}
-
-	return 1;
+	return n;
 }
 
-static ssize_t short_write(struct file *filp, const char __user *buf, size_t count,
-		loff_t *f_pos)
+/*
+ * Send every byte to DATA. iowrite8_rep() writes the whole buffer to the
+ * same register; for a port cookie it becomes outsb(), and the LEDs end up
+ * showing the last byte.
+ */
+static ssize_t data_write(struct file *filp, const char __user *buf,
+			  size_t count, loff_t *f_pos)
 {
-	unsigned char *kbuf, *ptr;
-	size_t cnt = count;
+	u8 *kbuf __free(kfree) = NULL;	/* freed on every return */
 
-	kbuf = kmalloc(cnt, GFP_KERNEL);
+	count = min_t(size_t, count, SHORT_MAX_WRITE);
 
-	if (!kbuf)
-		return -ENOMEM;
-	if (copy_from_user(kbuf, buf, cnt))
-		return -EFAULT;
+	/* allocates and copies in one call */
+	kbuf = memdup_user(buf, count);
+	if (IS_ERR(kbuf))
+		return PTR_ERR(kbuf);	/* __free(kfree) skips error pointers */
 
-	ptr = kbuf;
-
-	while (cnt--) {
-		pr_debug("mem=%p, val=%d(%#x)\n", short_iomem, *ptr, *ptr);
-		iowrite8(*ptr++, short_iomem);
-		wmb();
-	}
-
-	kfree(kbuf);
+	scoped_cond_guard(mutex_intr, return -ERESTARTSYS, &short_lock)
+		iowrite8_rep(io + LDD_IO_DATA, kbuf, count);
 
 	return count;
 }
 
-static struct file_operations fops = {
-	.owner	 = THIS_MODULE,
-	.read	 = short_read,
-	.write	 = short_write,
-	.open	 = short_open,
-	.release = short_release,
+static int data_open(struct inode *inode, struct file *filp)
+{
+	/* a byte stream: no position, no seeking */
+	return stream_open(inode, filp);
+}
+
+static const struct file_operations data_fops = {
+	.owner = THIS_MODULE,
+	.open  = data_open,
+	.read  = data_read,
+	.write = data_write,
 };
 
-static
-int __init m_init(void)
+/* ---- /dev/short_port_remap_matrix: 8 bytes of LED rows, seekable ---- */
+
+static ssize_t matrix_read(struct file *filp, char __user *buf, size_t count,
+			   loff_t *f_pos)
 {
-	int result = 0;
-	short_base = base;
+	u8 rows[LDD_IO_MATRIX_ROWS];
+	loff_t pos = *f_pos;
 
-	pr_err("base = %#lx\n", short_base);
-	if (!request_region(short_base, SHORT_NR_PORTS, "short")) {
-		pr_err("short_ioport: cannot get I/O port address %#lx\n",
-		       short_base);
-		result = -ENODEV;
-		goto out;
-	}
-	short_iomem = ioport_map(short_base, SHORT_NR_PORTS);
+	if (pos < 0)
+		return -EINVAL;
+	if (pos >= LDD_IO_MATRIX_ROWS)
+		return 0;
+	count = min_t(size_t, count, LDD_IO_MATRIX_ROWS - pos);
 
-	result = register_chrdev(major, MODULE_NAME, &fops);
-	if (result < 0) {
-		pr_err("cannot get major number!\n");
-		goto unreg_region;
+	scoped_cond_guard(mutex_intr, return -ERESTARTSYS, &short_lock) {
+		for (size_t i = 0; i < count; i++)
+			rows[i] = ioread8(io + LDD_IO_MATRIX + pos + i);
 	}
-	major = (major == 0) ? result : major;
+
+	if (copy_to_user(buf, rows, count))
+		return -EFAULT;
+	*f_pos = pos + count;
+	return count;
+}
+
+static ssize_t matrix_write(struct file *filp, const char __user *buf,
+			    size_t count, loff_t *f_pos)
+{
+	u8 rows[LDD_IO_MATRIX_ROWS];
+	loff_t pos = *f_pos;
+
+	if (pos < 0)
+		return -EINVAL;
+	if (pos >= LDD_IO_MATRIX_ROWS)
+		return -ENOSPC;
+	count = min_t(size_t, count, LDD_IO_MATRIX_ROWS - pos);
+
+	if (copy_from_user(rows, buf, count))
+		return -EFAULT;
+
+	scoped_cond_guard(mutex_intr, return -ERESTARTSYS, &short_lock) {
+		if (pos == 0 && count == LDD_IO_MATRIX_ROWS) {
+			/*
+			 * The whole picture: two 32-bit writes instead of
+			 * eight byte writes. iowrite32() is little endian,
+			 * like ldd-io, so the first row goes in the lowest
+			 * byte on any CPU.
+			 */
+			iowrite32(get_unaligned_le32(&rows[0]),
+				  io + LDD_IO_MATRIX);
+			iowrite32(get_unaligned_le32(&rows[4]),
+				  io + LDD_IO_MATRIX + 4);
+		} else {
+			for (size_t i = 0; i < count; i++)
+				iowrite8(rows[i], io + LDD_IO_MATRIX + pos + i);
+		}
+	}
+
+	*f_pos = pos + count;
+	return count;
+}
+
+static loff_t matrix_llseek(struct file *filp, loff_t off, int whence)
+{
+	return fixed_size_llseek(filp, off, whence, LDD_IO_MATRIX_ROWS);
+}
+
+static const struct file_operations matrix_fops = {
+	.owner  = THIS_MODULE,
+	.read   = matrix_read,
+	.write  = matrix_write,
+	.llseek = matrix_llseek,
+};
+
+/* ---- one cdev, one set of file operations per minor ---- */
+
+static const struct file_operations *const short_minor_fops[SHORT_NR_MINORS] = {
+	[SHORT_DATA]   = &data_fops,
+	[SHORT_MATRIX] = &matrix_fops,
+};
+
+/* On open, install the file operations of the minor in the file. */
+static int short_open(struct inode *inode, struct file *filp)
+{
+	unsigned int minor = iminor(inode);
+
+	if (minor >= SHORT_NR_MINORS)
+		return -ENXIO;
+
+	/* same module, so the reference taken for short_fops covers it */
+	filp->f_op = short_minor_fops[minor];
+	if (filp->f_op->open)
+		return filp->f_op->open(inode, filp);
+
+	return 0;
+}
+
+static const struct file_operations short_fops = {
+	.owner = THIS_MODULE,
+	.open  = short_open,
+};
+
+static int __init m_init(void)
+{
+	int err;
+
+	/* ioport_map() does not claim the ports, request_region() still does */
+	if (!request_region(base, LDD_IO_SIZE, MODULE_NAME)) {
+		pr_err("cannot get I/O ports %#lx-%#lx\n",
+		       base, base + LDD_IO_SIZE - 1);
+		return -EBUSY;
+	}
+
+	io = ioport_map(base, LDD_IO_SIZE);
+	if (!io) {
+		pr_err("cannot map I/O ports %#lx\n", base);
+		err = -ENOMEM;
+		goto err_release;
+	}
+
+	err = alloc_chrdev_region(&short_devno, 0, SHORT_NR_MINORS,
+				  MODULE_NAME);
+	if (err < 0) {
+		pr_err("cannot get major number: %d\n", err);
+		goto err_unmap;
+	}
+
+	cdev_init(&short_cdev, &short_fops);
+	short_cdev.owner = THIS_MODULE;
+
+	err = cdev_add(&short_cdev, short_devno, SHORT_NR_MINORS);
+	if (err) {
+		pr_err("adding cdev failed: %d\n", err);
+		goto err_unregister;
+	}
 
 	return 0;
 
-unreg_region:
-	ioport_unmap(short_iomem);
-	release_region(short_base, SHORT_NR_PORTS);
-
-out:
-	return result;
+err_unregister:
+	unregister_chrdev_region(short_devno, SHORT_NR_MINORS);
+err_unmap:
+	ioport_unmap(io);
+err_release:
+	release_region(base, LDD_IO_SIZE);
+	return err;
 }
 
-static
-void __exit m_exit(void)
+static void __exit m_exit(void)
 {
-	unregister_chrdev(major, MODULE_NAME);
-	ioport_unmap(short_iomem);
-	release_region(short_base, SHORT_NR_PORTS);
+	cdev_del(&short_cdev);
+	unregister_chrdev_region(short_devno, SHORT_NR_MINORS);
+	ioport_unmap(io);
+	release_region(base, LDD_IO_SIZE);
 }
-
 
 module_init(m_init);
 module_exit(m_exit);
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("d0u9");
-MODULE_DESCRIPTION("Basic io port manipulation based on Parallel Port");
+MODULE_DESCRIPTION("Port I/O through ioport_map() on the ldd-io device");
