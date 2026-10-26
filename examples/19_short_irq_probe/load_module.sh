@@ -1,11 +1,11 @@
-#! /bin/sh
+#!/bin/sh
 module="short_irq_probe"
 device="short_irq_probe"
 mode="666"
 group=0
 
-function load() {
-    insmod ./$module.ko $* || exit 1
+load() {
+    insmod ./$module.ko "$@" || exit 1
 
     rm -f /dev/${device}
 
@@ -16,7 +16,7 @@ function load() {
     chmod $mode /dev/${device}
 }
 
-function unload() {
+unload() {
     rm -f /dev/${device}
     rmmod $module || exit 1
 }
@@ -37,4 +37,3 @@ case $arg in
         exit 1
         ;;
 esac
-
