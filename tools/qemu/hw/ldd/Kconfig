@@ -1,4 +1,4 @@
-config LDD_PARALLEL
+config LDD_IO
     bool
     default y
     depends on ISA_BUS

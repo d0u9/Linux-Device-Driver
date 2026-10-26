@@ -4,7 +4,9 @@
 Each device is a source file with its own `LDD_*` symbol in
 [`Kconfig`](hw/ldd/Kconfig) and an entry in [`meson.build`](hw/ldd/meson.build).
 
-> TODO: No devices are written yet. Add them here and list them in this file.
+| Device   | Source                    | Description              |
+|----------|---------------------------|--------------------------|
+| `ldd-io` | [`hw/ldd/io.c`](hw/ldd/io.c) | [`ldd-io.md`](ldd-io.md) |
 
 ## Add the devices to QEMU
 

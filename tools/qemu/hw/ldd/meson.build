@@ -1,1 +1,1 @@
-system_ss.add(when: 'CONFIG_LDD_PARALLEL', if_true: files('parallel.c'))
+system_ss.add(when: 'CONFIG_LDD_IO', if_true: files('io.c'))
