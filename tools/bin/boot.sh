@@ -21,7 +21,8 @@ if [ ! -d "$SHARED" ]; then
   exit 1
 fi
 
-# TODO: Add the ldd devices from tools/qemu/ once they are written.
+# Extra arguments are passed on to QEMU. Examples that need an emulated
+# device add it this way, from the qemu.sh in their directory.
 "${LDD_ROOT}/bin/qemu" \
     -enable-kvm \
     -kernel "$KERNELPATH" \
@@ -32,5 +33,6 @@ fi
     -virtfs local,path="$SHARED",mount_tag=ldd,security_model=mapped-xattr \
     -m 512M \
     -device qemu-xhci \
-    -device edu
+    -device edu \
+    "$@"
 

@@ -117,13 +117,12 @@ are set, the current running kernel will be built against.
 ## run QEMU with the device
 
 **RUN ON HOST:** build QEMU with the devices from `tools/qemu` (see its
-README) and add the device in memory space with `mmio=on`, for example at
-the end of `bin/boot.sh`:
+README), then boot the guest with `qemu.sh` from this directory. It runs
+`$LDD_ROOT/bin/boot.sh` with the ldd-io device in memory space (`mmio=on`) and its two
+chardevs added:
 
 ```bash
-    -chardev socket,id=panel0,host=127.0.0.1,port=7100,server=on,wait=off \
-    -chardev socket,id=kbd0,host=127.0.0.1,port=7101,server=on,wait=off \
-    -device ldd-io,panel=panel0,keyboard=kbd0,mmio=on
+sh qemu.sh
 ```
 
 In two more host terminals, watch the panel and open the keyboard:
@@ -142,9 +141,10 @@ run:
 sh load_module.sh
 ```
 
-To use another address, e.g. with `-device ldd-io,...,mmiobase=0xfe000000`,
-load the module by hand with `insmod short_mmio.ko base=0xfe000000` and
-create the two nodes as `load_module.sh` does (minor 0 and 1).
+To use another address, e.g. after adding `mmiobase=0xfe000000` to the
+device in `qemu.sh`, load the module by hand with `insmod short_mmio.ko
+base=0xfe000000` and create the two nodes as `load_module.sh` does (minor 0
+and 1).
 
 ## test the module
 

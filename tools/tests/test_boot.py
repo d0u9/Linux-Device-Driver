@@ -27,10 +27,11 @@ class BootTest(unittest.TestCase):
             shared.mkdir()
             env = {**os.environ, "LDD_ROOT": str(root)}
 
-            result = subprocess.run(["bash", str(BOOT)], env=env,
-                                    capture_output=True, text=True)
+            result = subprocess.run(["bash", str(BOOT), "-device", "extra"],
+                                    env=env, capture_output=True, text=True)
             self.assertEqual(result.returncode, 42, result.stderr)
             args = result.stdout.splitlines()
+            self.assertEqual(args[-2:], ["-device", "extra"])
             self.assertEqual(args[args.index("-kernel") + 1], str(image))
             self.assertEqual(args[args.index("-initrd") + 1], str(archive))
             self.assertEqual(args[args.index("-nic") + 1],
