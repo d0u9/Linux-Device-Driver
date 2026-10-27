@@ -1,40 +1,29 @@
-#! /bin/sh
+#!/bin/sh
+# The tty core creates /dev/lddtty0..3 itself, with a dynamic major.
 module="lddtty"
-device="lddtty"
-mode="666"
-group=0
 
-function load() {
-    insmod ./$module.ko || exit 1
-
-    rm -f /dev/${device}*
-
-    major=$(awk -v device="$device" '$2==device {print $1}' /proc/devices)
-    mknod /dev/${device}0 c $major 0
-
-    chgrp $group /dev/${device}0
-    chmod $mode /dev/${device}0
+load() {
+    insmod ./$module.ko "$@" || exit 1
 }
 
-function unload() {
-    rm -f /dev/${device}*
-    rmmod $module
+unload() {
+    rmmod $module || exit 1
 }
 
 arg=${1:-"load"}
+[ $# -gt 0 ] && shift
 case $arg in
     load)
-        load ;;
+        load "$@" ;;
     unload)
         unload ;;
     reload)
         ( unload )
-        load
+        load "$@"
         ;;
     *)
-        echo "Usage: $0 {load | unload | reload}"
+        echo "Usage: $0 {load | unload | reload} [module parameters]"
         echo "Default is load"
         exit 1
         ;;
 esac
-
