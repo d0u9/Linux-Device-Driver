@@ -1,589 +1,498 @@
-#include <linux/kernel.h>
+// SPDX-License-Identifier: GPL-2.0
 #include <linux/module.h>
 #include <linux/init.h>
-#include <linux/slab.h>
+#include <linux/kernel.h>
+#include <linux/etherdevice.h>
+#include <linux/ip.h>
 #include <linux/netdevice.h>
-#include <linux/etherdevice.h> /* eth_type_trans */
-#include <linux/ip.h>          /* struct iphdr */
+#include <linux/skbuff.h>
+#include <linux/slab.h>
 #include <net/ip.h>
 
 #include "main.h"
 
-static void (*ldd_interrupt)(int, void *, struct pt_regs *);
+static int pool_size = 8;
+module_param(pool_size, int, 0444);
+MODULE_PARM_DESC(pool_size, "transmit buffers per device (default 8)");
 
-static int timeout = NETDEV_TIMEOUT;
-module_param(timeout, int, 0);
+static bool use_napi;
+module_param(use_napi, bool, 0444);
+MODULE_PARM_DESC(use_napi, "receive with NAPI polling instead of per-packet interrupts");
 
-int pool_size = 8;
-module_param(pool_size, int, 0);
-
-static int lockup = 0;
-module_param(lockup, int, 0);
-
-static int use_napi = 0;
-module_param(use_napi, int, 0);
-
+/* sn0 and sn1: what one sends, the other receives */
 static struct net_device *net_devs[2];
 
-static void ldd_dev_rx(struct net_device *dev, struct ldd_packet *pkt)
+/* the interrupt handler in use, called where hardware would interrupt */
+static void (*ldd_interrupt)(struct net_device *dev);
+
+static struct net_device *ldd_peer(struct net_device *dev)
 {
-	struct sk_buff *skb;
-	struct ldd_dev *ldd_dev = netdev_priv(dev);
+	return net_devs[dev == net_devs[0] ? 1 : 0];
+}
 
-	/*
-	 * The packet has been retrieved from the transmission
-	 * medium. Build an skb around it, so upper layers can handle it
-	 */
-	skb = dev_alloc_skb(pkt->datalen + 2); // TODO: why add 2?
-	if (!skb) {
-		if (printk_ratelimit())
-			printk(KERN_NOTICE "snull rx: low on mem - packet dropped\n");
-		ldd_dev->stats.rx_dropped++;
-		goto out;
+/*
+ * Transmit buffers. A device takes one per frame and stops its queue when
+ * none is left; the receiver gives it back, which wakes the queue.
+ */
+static struct ldd_packet *ldd_get_tx_buffer(struct net_device *dev)
+{
+	struct ldd_dev *priv = netdev_priv(dev);
+	struct ldd_packet *pkt;
+	unsigned long flags;
+
+	spin_lock_irqsave(&priv->lock, flags);
+	pkt = priv->pool;
+	if (pkt) {
+		priv->pool = pkt->next;
+		if (!priv->pool)
+			netif_stop_queue(dev);
 	}
-	skb_reserve(skb, 2); /* align IP on 16B boundary */  
-	memcpy(skb_put(skb, pkt->datalen), pkt->data, pkt->datalen);
-
-	/* Write metadata, and then pass to the receive level */
-	skb->dev = dev;
-	skb->protocol = eth_type_trans(skb, dev);
-	skb->ip_summed = CHECKSUM_UNNECESSARY; /* don't check it */
-
-	ldd_dev->stats.rx_packets++;
-	ldd_dev->stats.rx_bytes += pkt->datalen;
-	pr_debug("====== push skb ========\n");
-
-	print_hex_dump(KERN_DEBUG, "skb int raw: ", DUMP_PREFIX_OFFSET,
-		       16, 1, skb->data, skb->len, true);
-	netif_rx(skb);
-  out:
-	return;
+	spin_unlock_irqrestore(&priv->lock, flags);
+	return pkt;
 }
 
 static void ldd_release_buffer(struct ldd_packet *pkt)
 {
+	struct ldd_dev *priv = netdev_priv(pkt->dev);
 	unsigned long flags;
-	struct ldd_dev *ldd_dev = netdev_priv(pkt->dev);
-	
-	spin_lock_irqsave(&ldd_dev->lock, flags);
-	pkt->next = ldd_dev->pkt_pool;
-	ldd_dev->pkt_pool = pkt;
-	spin_unlock_irqrestore(&ldd_dev->lock, flags);
+	bool was_empty;
 
-	if (netif_queue_stopped(pkt->dev) && pkt->next == NULL)
+	spin_lock_irqsave(&priv->lock, flags);
+	was_empty = !priv->pool;
+	pkt->next = priv->pool;
+	priv->pool = pkt;
+	spin_unlock_irqrestore(&priv->lock, flags);
+
+	if (was_empty)
 		netif_wake_queue(pkt->dev);
-
-	pr_debug("release pkt: dev = %s\n", pkt->dev->name);
 }
 
-static
-void ldd_enqueue_buf(struct net_device *dev, struct ldd_packet *pkt)
+/* Called with priv->lock held. */
+static struct ldd_packet *ldd_rx_dequeue(struct ldd_dev *priv)
 {
-	unsigned long flags;
-	struct ldd_dev *ldd_dev = netdev_priv(dev);
+	struct ldd_packet *pkt = priv->rx_head;
 
-	spin_lock_irqsave(&ldd_dev->lock, flags);
-	pkt->next = ldd_dev->rx_queue;  /* FIXME - misorders packets */
-	ldd_dev->rx_queue = pkt;
-	spin_unlock_irqrestore(&ldd_dev->lock, flags);
-}
-
-static
-struct ldd_packet *ldd_dequeue_buf(struct net_device *dev)
-{
-	struct ldd_dev *ldd_dev = netdev_priv(dev);
-	struct ldd_packet *pkt;
-	unsigned long flags;
-
-	spin_lock_irqsave(&ldd_dev->lock, flags);
-	pkt = ldd_dev->rx_queue;
-	if (pkt != NULL)
-		ldd_dev->rx_queue = pkt->next;
-	spin_unlock_irqrestore(&ldd_dev->lock, flags);
+	if (pkt) {
+		priv->rx_head = pkt->next;
+		if (!priv->rx_head)
+			priv->rx_tail = NULL;
+	}
 	return pkt;
 }
 
-static
-void ldd_regular_interrupt(int irq, void *dev_id, struct pt_regs *regs)
+/* A frame arrives at @dev: queue it, oldest first, and interrupt. */
+static void ldd_rx_enqueue(struct net_device *dev, struct ldd_packet *pkt)
 {
-	int statusword;
+	struct ldd_dev *priv = netdev_priv(dev);
+	bool interrupt = false;
 	unsigned long flags;
-	struct ldd_dev *ldd_dev;
-	struct ldd_packet *pkt = NULL;
-	struct net_device *dev = (struct net_device *)dev_id;
 
-	if (!dev)
+	spin_lock_irqsave(&priv->lock, flags);
+	if (!priv->running) {
+		spin_unlock_irqrestore(&priv->lock, flags);
+		ldd_release_buffer(pkt);	/* nobody listening: lost */
 		return;
-
-	ldd_dev = netdev_priv(dev);
-	spin_lock_irqsave(&ldd_dev->lock, flags);
-
-	statusword = ldd_dev->status;
-	ldd_dev->status = 0;
-
-	if (statusword & NETDEV_RX_INTR) {
-		pkt = ldd_dev->rx_queue;
-		if (pkt) {
-			ldd_dev->rx_queue = pkt->next;
-			pr_debug("====== recv ========");
-			ldd_dev_rx(dev, pkt);
-		}
 	}
-
-	if (statusword & NETDEV_TX_INTR) {
-		ldd_dev->stats.tx_packets++;
-		ldd_dev->stats.tx_bytes += ldd_dev->tx_packetlen;
-		dev_kfree_skb(ldd_dev->skb);
+	pkt->next = NULL;
+	if (priv->rx_tail)
+		priv->rx_tail->next = pkt;
+	else
+		priv->rx_head = pkt;
+	priv->rx_tail = pkt;
+	if (priv->rx_int_enabled) {
+		priv->status |= NETDEV_RX_INTR;
+		interrupt = true;
 	}
+	spin_unlock_irqrestore(&priv->lock, flags);
 
-	spin_unlock_irqrestore(&ldd_dev->lock, flags);
-
-	if (pkt)
-		ldd_release_buffer(pkt); /* Do this outside the lock! */
+	if (interrupt)
+		ldd_interrupt(dev);
 }
 
-static
-int ldd_dev_poll(struct napi_struct *napi, int budget)
+/*
+ * Wrap a received frame in an skb and hand it to the network stack.
+ * dev_alloc_skb() and skb_reserve(NET_IP_ALIGN) together are what
+ * netdev_alloc_skb_ip_align() does: the 14-byte Ethernet header is moved
+ * 2 bytes on, so that the IP header behind it is 4-byte aligned.
+ */
+static void ldd_rx(struct net_device *dev, struct ldd_packet *pkt, bool napi)
 {
-	int rv, npackets = 0;
-	unsigned long flags;
 	struct sk_buff *skb;
-	struct ldd_dev *ldd_dev = container_of(napi, struct ldd_dev, napi);
-	struct net_device *dev = ldd_dev->net_dev;
-	struct ldd_packet *pkt;
 
-	pr_debug("========= budget: %d, dev = %s\n", budget, dev->name);
+	skb = dev_alloc_skb(pkt->datalen + NET_IP_ALIGN);
+	if (!skb) {
+		if (net_ratelimit())
+			netdev_notice(dev, "rx: low on memory, packet dropped\n");
+		DEV_STATS_INC(dev, rx_dropped);
+		return;
+	}
+	skb_reserve(skb, NET_IP_ALIGN);
+	skb_put_data(skb, pkt->data, pkt->datalen);
 
-	while (npackets < budget && ldd_dev->rx_queue) {
-		pr_debug("------ deque %s!\n", dev->name);
-		pkt = ldd_dequeue_buf(dev);
-		skb = dev_alloc_skb(pkt->datalen + 2);
-		if (!skb) {
-			if (printk_ratelimit())
-				pr_err("snull: packet dropped\n");
-			ldd_dev->stats.rx_dropped++;
-			npackets++;
-			ldd_release_buffer(pkt);
-			continue;
-		}
-		skb_reserve(skb, 2);
-		memcpy(skb_put(skb, pkt->datalen), pkt->data, pkt->datalen);
-		skb->dev = dev;
-		skb->protocol = eth_type_trans(skb, dev);
-		skb->ip_summed = CHECKSUM_UNNECESSARY;
+	skb->protocol = eth_type_trans(skb, dev);	/* also sets skb->dev */
+	skb->ip_summed = CHECKSUM_UNNECESSARY;	/* see NETIF_F_HW_CSUM */
 
-		print_hex_dump(KERN_DEBUG, "skb poll raw: ", DUMP_PREFIX_OFFSET,
-			       16, 1, skb->data, skb->len, true);
+	DEV_STATS_INC(dev, rx_packets);
+	DEV_STATS_ADD(dev, rx_bytes, pkt->datalen);
 
-		rv = netif_receive_skb(skb);
-		pr_debug("rv = %s\n", rv == NET_RX_SUCCESS ? "suc" : "drop");
+	/*
+	 * From an interrupt, netif_rx() queues the skb for the stack's
+	 * softirq; from NAPI's poll, which is that softirq, the stack takes
+	 * it at once. napi_gro_receive() would also merge related packets.
+	 */
+	if (napi)
+		netif_receive_skb(skb);
+	else
+		netif_rx(skb);
+}
 
-		npackets++;
-		ldd_dev->stats.rx_packets++;
-		ldd_dev->stats.rx_bytes += pkt->datalen;
+/* Read and clear the interrupt status; take the finished TX skb along. */
+static int ldd_ack_interrupt(struct ldd_dev *priv, struct sk_buff **tx_skb)
+{
+	unsigned long flags;
+	int status;
+
+	spin_lock_irqsave(&priv->lock, flags);
+	status = priv->status;
+	priv->status = 0;
+	*tx_skb = NULL;
+	if (status & NETDEV_TX_INTR) {
+		*tx_skb = priv->tx_skb;
+		priv->tx_skb = NULL;
+	}
+	spin_unlock_irqrestore(&priv->lock, flags);
+	return status;
+}
+
+static void ldd_tx_done(struct net_device *dev, struct sk_buff *skb)
+{
+	DEV_STATS_INC(dev, tx_packets);
+	DEV_STATS_ADD(dev, tx_bytes, skb->len);
+	/* _any: fine with interrupts disabled, as in a real handler */
+	dev_kfree_skb_any(skb);
+}
+
+/* Without NAPI: every received frame interrupts and is passed up here. */
+static void ldd_regular_interrupt(struct net_device *dev)
+{
+	struct ldd_dev *priv = netdev_priv(dev);
+	struct ldd_packet *pkt = NULL;
+	struct sk_buff *tx_skb;
+	unsigned long flags;
+	int status;
+
+	status = ldd_ack_interrupt(priv, &tx_skb);
+
+	if (status & NETDEV_RX_INTR) {
+		spin_lock_irqsave(&priv->lock, flags);
+		pkt = ldd_rx_dequeue(priv);
+		spin_unlock_irqrestore(&priv->lock, flags);
+	}
+	if (pkt) {
+		ldd_rx(dev, pkt, false);
 		ldd_release_buffer(pkt);
 	}
-
-	if (npackets < budget) {
-		spin_lock_irqsave(&ldd_dev->lock, flags);
-		if (napi_complete_done(napi, npackets)) {
-			pr_debug("openirq: %s, npackets = %d\n", dev->name, npackets);
-			ldd_dev->rx_int_enabled = true;
-		}
-		spin_unlock_irqrestore(&ldd_dev->lock, flags);
-	}
-	return npackets;
+	if (tx_skb)
+		ldd_tx_done(dev, tx_skb);
 }
 
-static
-void ldd_napi_interrupt(int irq, void *dev_id, struct pt_regs *regs)
+/*
+ * With NAPI: the first frame interrupts; the handler turns receive
+ * interrupts off and schedules the poll function, which then takes frames
+ * without further interrupts, up to a budget at a time.
+ */
+static void ldd_napi_interrupt(struct net_device *dev)
 {
-	int statusword;
-	struct ldd_dev *ldd_dev;
-
-	/*
-	 * As usual, check the "device" pointer for shared handlers.
-	 * Then assign "struct device *dev"
-	 */
-	struct net_device *dev = (struct net_device *)dev_id;
-	/* ... and check with hw if it's really ours */
-
-	/* paranoid */
-	if (!dev)
-		return;
-
-	/* Lock the device */
-	ldd_dev = netdev_priv(dev);
-	// spin_lock_irqsave(&ldd_dev->lock, flags);
-	spin_lock(&ldd_dev->lock);
-
-	/* retrieve statusword: real netdevices use I/O instructions */
-	statusword = ldd_dev->status;
-	ldd_dev->status = 0;
-	if (statusword & NETDEV_RX_INTR) {
-		pr_debug("schedule: %s, %s, napi=%px\n", dev->name,
-			 ldd_dev->net_dev->name, &ldd_dev->napi);
-			ldd_dev->rx_int_enabled = false; /* Disable further interrupts */
-			napi_schedule(&ldd_dev->napi);
-	}
-	if (statusword & NETDEV_TX_INTR) {
-        	/* a transmission is over: free the skb */
-		ldd_dev->stats.tx_packets++;
-		ldd_dev->stats.tx_bytes += ldd_dev->tx_packetlen;
-		if(ldd_dev->skb) {
-			dev_kfree_skb(ldd_dev->skb);
-			ldd_dev->skb = 0;
-		}
-	}
-
-	/* Unlock the device and we are done */
-	// spin_unlock_irqrestore(&ldd_dev->lock, flags);
-	spin_unlock(&ldd_dev->lock);
-}
-
-
-static
-int ldd_netdev_open(struct net_device *dev)
-{
-	/* request_region(), request_irq(), ....  (like fops->open) */
-
-	struct ldd_dev *ldd_dev = netdev_priv(dev);
-	u8 addr[ETH_ALEN];
-
-	pr_debug("========= open %s ====== \n", dev->name);
-
-	memcpy(addr, "\0SNUL0", ETH_ALEN);
-	if (dev == net_devs[1])
-		addr[ETH_ALEN-1]++; /* \0SNUL1 */
-	eth_hw_addr_set(dev, addr);
-
-	pr_debug("======== enable napi = %px, napi = %px \n",
-		 dev, &ldd_dev->napi);
-	if (use_napi)
-		napi_enable(&ldd_dev->napi);
-
-	ldd_dev->rx_int_enabled = true;
-	netif_start_queue(dev);
-
-	return 0;
-}
-
-static
-int ldd_netdev_release(struct net_device *dev)
-{
-	struct ldd_dev *ldd_dev = netdev_priv(dev);
-
-	pr_debug("========= release %s  ======= \n", dev->name);
-
-	ldd_dev->rx_int_enabled = false;
-	netif_stop_queue(dev);
-	pr_debug("====== disable %px \n", &ldd_dev->napi);
-	if (use_napi)
-		napi_disable(&ldd_dev->napi);
-	return 0;
-}
-
-static
-int ldd_netdev_ioctl(struct net_device *dev, struct ifreq *rq, int cmd)
-{
-	pr_debug("ioctl\n");
-	return 0;
-}
-
-static
-struct ldd_packet *ldd_get_tx_buffer(struct net_device *dev)
-{
+	struct ldd_dev *priv = netdev_priv(dev);
+	struct sk_buff *tx_skb;
 	unsigned long flags;
-	struct ldd_dev *ldd_dev = netdev_priv(dev);
-	struct ldd_packet *pkt;
-    
-	spin_lock_irqsave(&ldd_dev->lock, flags);
-	pkt = ldd_dev->pkt_pool;
-	if(!pkt) {
-		pr_debug("Out of Pool\n");
-		return pkt;
+	int status;
+
+	status = ldd_ack_interrupt(priv, &tx_skb);
+
+	if (status & NETDEV_RX_INTR) {
+		spin_lock_irqsave(&priv->lock, flags);
+		priv->rx_int_enabled = false;
+		spin_unlock_irqrestore(&priv->lock, flags);
+		napi_schedule(&priv->napi);
 	}
-	ldd_dev->pkt_pool = pkt->next;
-	if (ldd_dev->pkt_pool == NULL) {
-		pr_info("Pool empty\n");
-		netif_stop_queue(dev);
-	}
-	spin_unlock_irqrestore(&ldd_dev->lock, flags);
-	return pkt;
+	if (tx_skb)
+		ldd_tx_done(dev, tx_skb);
 }
 
-static
-int ldd_netdev_hw_tx(struct sk_buff *skb, struct net_device *dev)
+static int ldd_poll(struct napi_struct *napi, int budget)
 {
-	int rv, len;
-	struct iphdr *iphdr;
-	u32 *saddr, *daddr;
-	struct ldd_dev *dest_ldd_dev, *src_ldd_dev;
-	struct net_device *dest_dev;
-	struct ldd_packet *tx_buffer;
+	struct ldd_dev *priv = container_of(napi, struct ldd_dev, napi);
+	struct net_device *dev = priv->ndev;
+	struct ldd_packet *pkt;
+	unsigned long flags;
+	bool more;
+	int done = 0;
 
-	pr_debug("======= New tx ==========\n");
-
-
-	// print_hex_dump(KERN_DEBUG, "skb tx raw: ", DUMP_PREFIX_OFFSET,
-		       // 16, 1, skb->data, skb->len, true);
-
-	iphdr = (struct iphdr*)skb_network_header(skb);
-	saddr = &iphdr->saddr;
-	daddr = &iphdr->daddr;
-
-	pr_debug("before saddr: 0x%x, daddr: 0x%x\n", *saddr, *daddr);
-	((u8 *)saddr)[2] ^= 1; /* change the third octet (class C) */
-	((u8 *)daddr)[2] ^= 1;
-	pr_debug("after saddr: 0x%x, daddr: 0x%x\n", *saddr, *daddr);
-
-	if (skb->len < ETH_ZLEN) {
-		rv = skb_padto(skb, ETH_ZLEN);
-		if (rv) {
-			pr_err("Pad failed\n");
-			return rv;
-		}
-		len = ETH_ZLEN;
-	} else {
-		len = skb->len;
+	while (done < budget) {
+		spin_lock_irqsave(&priv->lock, flags);
+		pkt = ldd_rx_dequeue(priv);
+		spin_unlock_irqrestore(&priv->lock, flags);
+		if (!pkt)
+			break;
+		ldd_rx(dev, pkt, true);
+		ldd_release_buffer(pkt);
+		done++;
 	}
 
-	ip_send_check(iphdr);
+	/* Budget used up: stay scheduled, NAPI calls again. */
+	if (done == budget)
+		return done;
+
+	if (napi_complete_done(napi, done)) {
+		/*
+		 * Turn receive interrupts back on. A frame queued after the
+		 * loop above found the queue empty raised no interrupt, so
+		 * look once more.
+		 */
+		spin_lock_irqsave(&priv->lock, flags);
+		more = priv->rx_head;
+		priv->rx_int_enabled = !more;
+		spin_unlock_irqrestore(&priv->lock, flags);
+		if (more)
+			napi_schedule(napi);
+	}
+	return done;
+}
+
+/*
+ * Only IPv4 is passed: the source and destination addresses get the
+ * lowest bit of their third byte flipped, so that 192.168.0.2, sent out
+ * of sn0, arrives at sn1 as one of its own addresses, 192.168.1.2.
+ */
+static netdev_tx_t ldd_start_xmit(struct sk_buff *skb, struct net_device *dev)
+{
+	struct ldd_dev *priv = netdev_priv(dev);
+	struct net_device *peer = ldd_peer(dev);
+	unsigned int len = max_t(unsigned int, skb->len, ETH_ZLEN);
+	struct ldd_packet *pkt;
+	unsigned long flags;
+	struct iphdr *ih;
+
+	if (skb->protocol != htons(ETH_P_IP) || !peer ||
+	    skb->len < ETH_HLEN + sizeof(*ih) || skb->len > ETH_FRAME_LEN) {
+		DEV_STATS_INC(dev, tx_dropped);
+		dev_kfree_skb_any(skb);
+		return NETDEV_TX_OK;
+	}
+
+	/* the queue stops as the last buffer is taken, so this is rare */
+	pkt = ldd_get_tx_buffer(dev);
+	if (!pkt)
+		return NETDEV_TX_BUSY;
 
 	/*
-	 * Ok, now the packet is ready for transmission: first simulate a
-	 * receive interrupt on the twin device, then  a
-	 * transmission-done on the transmitting device
+	 * Copy the frame, short ones padded with zeros to the Ethernet
+	 * minimum, and change the copy only: the skb's data may be shared
+	 * with clones, such as the one TCP keeps to retransmit.
 	 */
-	dest_dev = net_devs[dev == net_devs[0] ? 1 : 0];
-	dest_ldd_dev = netdev_priv(dest_dev);
+	memset(pkt->data, 0, len);
+	skb_copy_bits(skb, 0, pkt->data, skb->len);
+	pkt->datalen = len;
 
-	tx_buffer = ldd_get_tx_buffer(dev);
-	if(!tx_buffer) {
-		pr_debug("Out of tx buffer, len is %i\n",len);
-		return -ENOMEM;
-	}
+	ih = (struct iphdr *)(pkt->data + ETH_HLEN);
+	((u8 *)&ih->saddr)[2] ^= 1;
+	((u8 *)&ih->daddr)[2] ^= 1;
+	ip_send_check(ih);		/* the IP header checksum */
 
-	tx_buffer->datalen = len;
-	memcpy(tx_buffer->data, skb->data, len);
-	pr_debug("datato %s -> %s\n", dev->name, dest_dev->name);
+	/* the "wire": the twin receives it */
+	ldd_rx_enqueue(peer, pkt);
 
-	ldd_enqueue_buf(dest_dev, tx_buffer);
-	if (dest_ldd_dev->rx_int_enabled) {
-		dest_ldd_dev->status |= NETDEV_RX_INTR;
-		ldd_interrupt(0, dest_dev, NULL);
-	}
+	/* and the transmission is done: the TX interrupt frees the skb */
+	spin_lock_irqsave(&priv->lock, flags);
+	priv->tx_skb = skb;
+	priv->status |= NETDEV_TX_INTR;
+	spin_unlock_irqrestore(&priv->lock, flags);
+	ldd_interrupt(dev);
 
+	return NETDEV_TX_OK;
+}
 
-	src_ldd_dev = netdev_priv(dev);
-	src_ldd_dev->tx_packetlen = len;
-	src_ldd_dev->tx_packetdata = skb->data;
-	src_ldd_dev->status |= NETDEV_TX_INTR;
-#if 0
-	if (lockup && ((src_ldd_dev->stats.tx_packets + 1) % lockup) == 0) {
-        	/* Simulate a dropped transmit interrupt */
-		netif_stop_queue(dev);
-		PDEBUG("Simulate lockup at %ld, txp %ld\n", jiffies,
-				(unsigned long) src_ldd_dev->stats.tx_packets);
-	}
-	else
-		ldd_interrupt(0, dev, NULL);
-#endif
-	ldd_interrupt(0, dev, NULL);
+static int ldd_open(struct net_device *dev)
+{
+	struct ldd_dev *priv = netdev_priv(dev);
+	unsigned long flags;
 
+	if (use_napi)
+		napi_enable(&priv->napi);
+
+	spin_lock_irqsave(&priv->lock, flags);
+	priv->running = true;
+	priv->rx_int_enabled = true;
+	spin_unlock_irqrestore(&priv->lock, flags);
+
+	netif_start_queue(dev);
 	return 0;
 }
 
-static
-int ldd_netdev_tx(struct sk_buff *skb, struct net_device *dev)
+static int ldd_stop(struct net_device *dev)
 {
-	struct ldd_dev *ldd_dev = netdev_priv(dev);
+	struct ldd_dev *priv = netdev_priv(dev);
+	struct ldd_packet *pkt;
+	unsigned long flags;
 
-	netif_trans_update(dev);
+	netif_stop_queue(dev);
 
-	/* Remember the skb, so we can free it at interrupt time */
-	ldd_dev->skb = skb;
+	spin_lock_irqsave(&priv->lock, flags);
+	priv->running = false;
+	priv->rx_int_enabled = false;
+	spin_unlock_irqrestore(&priv->lock, flags);
 
-	/* actual deliver of data is device-specific, and not shown here */
-	return ldd_netdev_hw_tx(skb, dev);
+	if (use_napi)
+		napi_disable(&priv->napi);
+
+	/* give back what was received but not passed up */
+	for (;;) {
+		spin_lock_irqsave(&priv->lock, flags);
+		pkt = ldd_rx_dequeue(priv);
+		spin_unlock_irqrestore(&priv->lock, flags);
+		if (!pkt)
+			break;
+		ldd_release_buffer(pkt);
+	}
+	return 0;
 }
 
-static
-struct net_device_stats *ldd_netdev_stats(struct net_device *dev)
+/*
+ * Build the Ethernet header. There is no ARP (IFF_NOARP), so the
+ * destination is our own address with the last bit flipped: the twin's.
+ */
+static int ldd_header(struct sk_buff *skb, struct net_device *dev,
+		      unsigned short type, const void *daddr,
+		      const void *saddr, unsigned int len)
 {
-	struct ldd_dev *ldd_dev = netdev_priv(dev);
-	return &ldd_dev->stats;
-}
-
-static int ldd_netdev_header(struct sk_buff *skb, struct net_device *dev,
-                unsigned short type, const void *daddr, const void *saddr,
-                unsigned len)
-{
-	struct ethhdr *eth = (struct ethhdr *)skb_push(skb,ETH_HLEN);
+	struct ethhdr *eth = skb_push(skb, ETH_HLEN);
 
 	eth->h_proto = htons(type);
-	pr_debug("in-> saddr = %llx, daddr = %llx\n",
-		 saddr ? *((u64*)saddr) : 0,
-		 daddr ? *((u64*)daddr) : 0);
 	memcpy(eth->h_source, saddr ? saddr : dev->dev_addr, dev->addr_len);
-	memcpy(eth->h_dest,   daddr ? daddr : dev->dev_addr, dev->addr_len);
-	eth->h_dest[ETH_ALEN - 1]   ^= 0x01;
-	return (dev->hard_header_len);
+	memcpy(eth->h_dest, daddr ? daddr : dev->dev_addr, dev->addr_len);
+	eth->h_dest[ETH_ALEN - 1] ^= 0x01;
+	return dev->hard_header_len;
 }
 
 static const struct header_ops ldd_header_ops = {
-	.create  = ldd_netdev_header,
+	.create = ldd_header,
 };
 
+/* Statistics live in dev->stats, which the core reports by itself. */
 static const struct net_device_ops ldd_netdev_ops = {
-	.ndo_open            = ldd_netdev_open,
-	.ndo_stop            = ldd_netdev_release,
-	.ndo_start_xmit      = ldd_netdev_tx,
-	.ndo_do_ioctl        = ldd_netdev_ioctl,
-	// .ndo_set_config      = snull_config,
-	.ndo_get_stats       = ldd_netdev_stats,
-	// .ndo_change_mtu      = snull_change_mtu,
-	// .ndo_tx_timeout      = snull_tx_timeout,
+	.ndo_open       = ldd_open,
+	.ndo_stop       = ldd_stop,
+	.ndo_start_xmit = ldd_start_xmit,
 };
 
-static
-int ldd_setup_pool(struct net_device *dev)
+/* Called by alloc_netdev() to set up the new device. */
+static void ldd_setup(struct net_device *dev)
 {
-	int i;
-	struct ldd_dev *ldd_dev = netdev_priv(dev);
-	struct ldd_packet *pkt, *next;
-
-	pr_debug("pool_size = %d\n", pool_size);
-	ldd_dev->pkt_arr = kcalloc(pool_size, sizeof(struct ldd_packet), GFP_KERNEL);
-	if (!ldd_dev->pkt_arr) {
-		pr_err("Alloc memeory for pool failed\n");
-		return -ENOMEM;
-	}
-
-	next = NULL;
-	for (i = pool_size - 1; i >= 0; i--) {
-		pkt = ldd_dev->pkt_arr + i;
-		pkt->next = next;
-		pkt->dev = dev;
-		next = pkt;
-	}
-
-	ldd_dev->pkt_pool = ldd_dev->pkt_arr;
-
-	return 0;
-}
-
-static
-void ldd_teardown_pool(struct net_device *dev)
-{
-	struct ldd_dev *ldd_dev = netdev_priv(dev);
-
-	kfree(ldd_dev->pkt_arr);
-}    
-
-
-static
-void ldd_dev_init(struct net_device *dev)
-{
-	struct ldd_dev *ldd_dev;
+	struct ldd_dev *priv = netdev_priv(dev);
 
 	ether_setup(dev);
-	dev->watchdog_timeo = timeout;
 	dev->netdev_ops = &ldd_netdev_ops;
 	dev->header_ops = &ldd_header_ops;
-	dev->flags           |= IFF_NOARP;
-	dev->features        |= NETIF_F_HW_CSUM;
+	dev->flags |= IFF_NOARP;
+	/*
+	 * Claim to checksum in hardware, so the stack leaves TCP and UDP
+	 * checksums undone; the receiver then says CHECKSUM_UNNECESSARY. The
+	 * address rewrite would break those checksums anyway.
+	 */
+	dev->features |= NETIF_F_HW_CSUM;
 
-	ldd_dev = netdev_priv(dev);
-	memset(ldd_dev, 0, sizeof(struct ldd_dev));
-
-	ldd_dev->net_dev = dev;
-	spin_lock_init(&ldd_dev->lock);
-	ldd_dev->rx_int_enabled = false;
-	if (use_napi) {
-		netif_napi_add_weight(dev, &ldd_dev->napi, ldd_dev_poll, 2);
-	}
-
+	priv->ndev = dev;
+	spin_lock_init(&priv->lock);
 }
 
-static
-void ldd_cleanup(void)
+static int ldd_create(int i)
 {
+	u8 addr[ETH_ALEN] = { 0x00, 'S', 'N', 'U', 'L', '0' + i };
+	struct net_device *dev;
+	struct ldd_dev *priv;
+	int j, err;
+
+	dev = alloc_netdev(sizeof(*priv), "sn%d", NET_NAME_ENUM, ldd_setup);
+	if (!dev)
+		return -ENOMEM;
+	priv = netdev_priv(dev);
+	eth_hw_addr_set(dev, addr);
+
+	priv->pkt_arr = kzalloc_objs(*priv->pkt_arr, pool_size);
+	if (!priv->pkt_arr) {
+		err = -ENOMEM;
+		goto err_free;
+	}
+	for (j = 0; j < pool_size; j++) {
+		priv->pkt_arr[j].dev = dev;
+		priv->pkt_arr[j].next = j + 1 < pool_size ?
+					&priv->pkt_arr[j + 1] : NULL;
+	}
+	priv->pool = priv->pkt_arr;
+
+	/*
+	 * A weight of 2 lets poll() be seen running out of budget with a
+	 * few frames; netif_napi_add() uses the usual 64.
+	 */
+	if (use_napi)
+		netif_napi_add_weight(dev, &priv->napi, ldd_poll, 2);
+
+	net_devs[i] = dev;
+	err = register_netdev(dev);
+	if (err)
+		goto err_pool;
+	return 0;
+
+err_pool:
+	net_devs[i] = NULL;
+	kfree(priv->pkt_arr);
+err_free:
+	free_netdev(dev);		/* also deletes the NAPI context */
+	return err;
+}
+
+/*
+ * Unregister both before freeing either: a device still up may send to
+ * its twin, and finds it not running until it is freed.
+ */
+static void ldd_destroy(int n)
+{
+	struct ldd_dev *priv;
 	int i;
-	for (i = 0; i < 2; i++) {
-		if (net_devs[i]) {
-			unregister_netdev(net_devs[i]);
-			ldd_teardown_pool(net_devs[i]);
-			free_netdev(net_devs[i]);
-		}
+
+	for (i = 0; i < n; i++)
+		unregister_netdev(net_devs[i]);
+	for (i = 0; i < n; i++) {
+		priv = netdev_priv(net_devs[i]);
+		kfree(priv->pkt_arr);
+		free_netdev(net_devs[i]);
+		net_devs[i] = NULL;
 	}
 }
 
-static
-int __init m_init(void)
+static int __init m_init(void)
 {
-	int i, rv;
-	struct ldd_dev *ldd_dev;
+	int i, err;
+
+	if (pool_size < 1)
+		return -EINVAL;
 
 	ldd_interrupt = use_napi ? ldd_napi_interrupt : ldd_regular_interrupt;
 
-	ldd_dev = kzalloc(sizeof(struct ldd_dev), GFP_KERNEL);
-	if (!ldd_dev)
-		return -ENOMEM;
-
-	net_devs[0] = alloc_netdev(sizeof(struct ldd_dev), "sn%d",
-				   NET_NAME_UNKNOWN, ldd_dev_init);
-	net_devs[1] = alloc_netdev(sizeof(struct ldd_dev), "sn%d",
-				   NET_NAME_UNKNOWN, ldd_dev_init);
-	if (net_devs[0] == NULL || net_devs[1] == NULL) {
-		rv = -ENOMEM;
-		goto out;
-	}
-
-	pr_debug("dev[0] = %px, dev[1] = %px\n", net_devs[0], net_devs[1]);
-	ldd_dev = netdev_priv(net_devs[0]);
-	pr_debug("0 napi = %px\n", &ldd_dev->napi);
-	ldd_dev = netdev_priv(net_devs[1]);
-	pr_debug("1 napi = %px\n", &ldd_dev->napi);
-
-	for (i = 0; i < 2;  i++) {
-		rv = ldd_setup_pool(net_devs[i]);
-		if (rv) {
-			pr_err("Setup pool failed for device %d\n", i);
-			goto out;
+	for (i = 0; i < 2; i++) {
+		err = ldd_create(i);
+		if (err) {
+			ldd_destroy(i);
+			return err;
 		}
-
-		rv = register_netdev(net_devs[i]);
-		if (rv) {
-			pr_err("registering device %s failed\n",
-			       net_devs[i]->name);
-			rv = -ENODEV;
-			goto out;
-		}
-
 	}
-
-#if 0
-	for (i = 0; i < 2;  i++) {
-		ldd_dev = netdev_priv(net_devs[i]);
-		pr_debug("====== enable napi dev = %px, napi = %px\n",
-			 net_devs[i], &ldd_dev->napi);
-		if (use_napi)
-			napi_enable(&ldd_dev->napi);
-	}
-#endif
-
-
 	return 0;
-out:
-	ldd_cleanup();
-	return rv;
 }
 
-static
-void __exit m_exit(void)
+static void __exit m_exit(void)
 {
-	ldd_cleanup();
+	ldd_destroy(2);
 }
 
 module_init(m_init);
@@ -591,4 +500,4 @@ module_exit(m_exit);
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("d0u9");
-MODULE_DESCRIPTION("PCI Driver skel");
+MODULE_DESCRIPTION("snull: two network interfaces wired to each other");
