@@ -1,287 +1,209 @@
-#include <linux/kernel.h>
+// SPDX-License-Identifier: GPL-2.0
 #include <linux/module.h>
-#include <linux/pci.h>
-#include <linux/cdev.h>
 #include <linux/init.h>
-#include <linux/delay.h>
+#include <linux/kernel.h>
+#include <linux/interrupt.h>
+#include <linux/kstrtox.h>
+#include <linux/pci.h>
+#include <linux/slab.h>
+#include <linux/sysfs.h>
 
 #include "main.h"
 
-#define PCI_VENDOR_ID_QEMU		0x1234
-#define PCI_KMOD_EDU_VENDOR_ID		PCI_VENDOR_ID_QEMU
-#define PCI_KMOD_EDU_DEVICE_ID		0x7863
+static bool msi = true;
+module_param(msi, bool, 0444);
+MODULE_PARM_DESC(msi, "use MSI (default), or the INTx line if 0");
 
-static struct pci_device_id ids[] = {
-	{ PCI_DEVICE(PCI_KMOD_EDU_VENDOR_ID, PCI_KMOD_EDU_DEVICE_ID), },
-	{ 0, }
+static const struct pci_device_id irq_dev_ids[] = {
+	{ PCI_DEVICE(EDU_VENDOR_ID, EDU_DEVICE_ID) },
+	{ }
 };
-MODULE_DEVICE_TABLE(pci, ids);
+MODULE_DEVICE_TABLE(pci, irq_dev_ids);
 
-static int dev_open(struct inode *inode, struct file *filp)
+/*
+ * edu keeps a status word: writing to IRQ_RAISE ORs the value in and sends
+ * an MSI, or raises its INTx line, which stays raised until IRQ_ACK has
+ * cleared every bit. An MSI is a single message and needs no ack to stop,
+ * but INTx is level-triggered: without the ack the handler would be called
+ * again and again, until the kernel disables the line ("nobody cared").
+ */
+static irqreturn_t irq_dev_handler(int irq, void *dev_id)
 {
-	struct irq_dev *irq_dev;
-	irq_dev = container_of(inode->i_cdev, struct irq_dev, cdev);
+	struct irq_dev *dev = dev_id;
+	u32 status;
 
-	iowrite32(1, irq_dev->bar[0] + 0x60);
+	status = ioread32(dev->bar0 + EDU_REG_IRQ_STATUS);
+	if (!status)
+		return IRQ_NONE;	/* not ours: an INTx line may be shared */
 
-	return 0;
-}
+	iowrite32(status, dev->bar0 + EDU_REG_IRQ_ACK);
 
-static int dev_release(struct inode *inode, struct file *filp)
-{
-	pr_debug("%s() is invoked\n", __FUNCTION__);
-	return 0;
-}
-
-static struct file_operations fops = {
-	.owner   = THIS_MODULE,
-	.open    = dev_open,
-	.release = dev_release,
-};
-
-static int create_chrdev(struct irq_dev *irq_dev)
-{
-	int rv;
-
-	rv = alloc_chrdev_region(&irq_dev->devno, 0, 1, MODULE_NAME);
-	if (rv < 0) {
-		pr_err("cannot get major number!\n");
-		return rv;
-	}
-
-	cdev_init(&irq_dev->cdev, &fops);
-	irq_dev->cdev.owner = THIS_MODULE;
-
-	rv = cdev_add(&irq_dev->cdev, irq_dev->devno, 1);
-	if (rv) {
-		pr_debug("Error(%d): Adding %s error\n", rv, MODULE_NAME);
-		unregister_chrdev_region(irq_dev->devno, 1);
-		return rv;
-	}
-
-
-
-	return 0;
-}
-
-static void destroy_chrdev(struct irq_dev *irq_dev)
-{
-	cdev_del(&irq_dev->cdev);
-	unregister_chrdev_region(irq_dev->devno, 1);
-}
-
-static irqreturn_t irq_service(int irq, void *dev_id)
-{
-	pr_debug("irq triggered: irq = %d\n", irq);
-
+	WRITE_ONCE(dev->last_status, status);
+	atomic_inc(&dev->count);
 	return IRQ_HANDLED;
 }
 
-static void irq_free(struct irq_dev *irq_dev)
+/*
+ * sysfs files in the device's directory, /sys/bus/pci/devices/<addr>/.
+ * The driver core adds them after probe() and removes them before
+ * remove(), so the driver data is valid whenever they are used.
+ */
+static ssize_t raise_store(struct device *d, struct device_attribute *attr,
+			   const char *buf, size_t count)
 {
-	int i;
-	for (i = 0; i < irq_dev->irq_nr; i++) {
-		if (irq_dev->irqs[i])
-			free_irq(irq_dev->irqs[i], irq_dev->irqs + i);
-	}
-	pci_free_irq_vectors(irq_dev->pcidev);
+	struct irq_dev *dev = dev_get_drvdata(d);
+	u32 val;
+	int err;
+
+	err = kstrtou32(buf, 0, &val);
+	if (err)
+		return err;
+	if (!val)
+		return -EINVAL;		/* no bit set, no interrupt */
+
+	iowrite32(val, dev->bar0 + EDU_REG_IRQ_RAISE);
+	return count;
 }
+static DEVICE_ATTR_WO(raise);
 
-static int irq_alloc(struct irq_dev *irq_dev)
+static ssize_t interrupts_show(struct device *d, struct device_attribute *attr,
+			       char *buf)
 {
-	int i, irq, rv, nvec = PCI_KMOD_EDU_MAX_IRQ_VEC;
+	struct irq_dev *dev = dev_get_drvdata(d);
 
-	nvec = pci_alloc_irq_vectors(irq_dev->pcidev,
-				     1, nvec, PCI_IRQ_ALL_TYPES);
-	if (nvec < 0) {
-		pr_err("pci_alloc_irq_vectors failed!\n");
-		return nvec;
-	}
-	pr_debug("irq vec number = %d\n", nvec);
-	irq_dev->irq_nr = nvec;
-
-	for (i = 0; i < nvec; i++) {
-		irq = pci_irq_vector(irq_dev->pcidev, i);
-		rv = request_irq(irq, irq_service, 0, MODULE_NAME, irq_dev->irqs + i);
-		pr_debug("request_irq(%d) == %d\n", irq, rv);
-		if (rv < 0)
-			goto fail;
-		irq_dev->irqs[i] = irq;
-	}
-
-	return 0;
-fail:
-	irq_free(irq_dev);
-	return rv;
+	return sysfs_emit(buf, "%d\n", atomic_read(&dev->count));
 }
+static DEVICE_ATTR_RO(interrupts);
 
-static void unmap_bars(struct irq_dev *irq_dev)
+static ssize_t last_status_show(struct device *d,
+				struct device_attribute *attr, char *buf)
 {
-	int i;
-	for (i = 0; i < irq_dev->bar_nr; i++) {
-		pci_iounmap(irq_dev->pcidev, irq_dev->bar[i]);
-	}
+	struct irq_dev *dev = dev_get_drvdata(d);
+
+	return sysfs_emit(buf, "%#x\n", READ_ONCE(dev->last_status));
 }
+static DEVICE_ATTR_RO(last_status);
 
-static int map_single_bar(struct irq_dev *irq_dev, int idx)
+static struct attribute *irq_dev_attrs[] = {
+	&dev_attr_raise.attr,
+	&dev_attr_interrupts.attr,
+	&dev_attr_last_status.attr,
+	NULL
+};
+ATTRIBUTE_GROUPS(irq_dev);
+
+/*
+ * pcim_enable_device(), pcim_iomap_region() and devm_request_irq() are the
+ * managed versions of the calls below: they are undone automatically when
+ * probe() fails or after remove(). They are written out here to show each
+ * step and its undo.
+ */
+static int irq_dev_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 {
-	resource_size_t bar_start;
-	resource_size_t bar_len;
-	void *__iomem bar_addr;
+	unsigned int types = msi ? PCI_IRQ_MSI : PCI_IRQ_INTX;
+	struct irq_dev *dev;
+	unsigned long flags;
+	int err, nvec;
 
-	bar_start = pci_resource_start(irq_dev->pcidev, idx);
-	bar_len = pci_resource_len(irq_dev->pcidev, idx);
-
-	if (bar_len == 0) {
-		return bar_len;
-	}
-
-	bar_addr = pci_iomap(irq_dev->pcidev, idx, bar_len);
-	if (!bar_addr)
+	dev = kzalloc_obj(*dev);
+	if (!dev)
 		return -ENOMEM;
+	dev->pdev = pdev;
+	atomic_set(&dev->count, 0);
 
-	pr_info("BAR%d at 0x%llx mapped at 0x%px, length=%llu(/%llx)\n", idx,
-		(u64)bar_start, bar_addr, (u64)bar_len, (u64)bar_len);
+	err = pci_enable_device(pdev);
+	if (err)
+		goto err_free;
 
-	irq_dev->bar[irq_dev->bar_nr++] = bar_addr;
+	err = pci_request_regions(pdev, MODULE_NAME);
+	if (err)
+		goto err_disable;
 
-	return (int)bar_len;
-}
-
-static int map_bars(struct irq_dev *irq_dev)
-{
-	int i, rv;
-	int bar_len;
-
-	for (i = 0; i < PCI_KMOD_EDU_BAR_NUM; i++) {
-		bar_len = map_single_bar(irq_dev, i);
-		if (bar_len == 0) {
-			continue;
-		} else if (bar_len < 0) {
-			rv = bar_len;
-			goto fail;
-		}
+	dev->bar0 = pci_iomap(pdev, 0, 0);
+	if (!dev->bar0) {
+		err = -ENOMEM;
+		goto err_regions;
 	}
 
+	/* an MSI is a memory write by the device: it must master the bus */
+	pci_set_master(pdev);
+
+	/*
+	 * Ask for between 1 and 1 vectors of the given types; the return
+	 * value is how many were allocated. edu has a single MSI vector and
+	 * no MSI-X. PCI_IRQ_ALL_TYPES would try MSI-X, then MSI, then INTx.
+	 * Older drivers called pci_enable_msi() or pci_enable_msix_range().
+	 */
+	nvec = pci_alloc_irq_vectors(pdev, 1, 1, types);
+	if (nvec < 0) {
+		err = nvec;
+		goto err_unmap;
+	}
+	dev->irq = pci_irq_vector(pdev, 0);
+
+	/*
+	 * An MSI vector belongs to this device alone, an INTx line may be
+	 * shared with others. pci_request_irq() picks the flag by itself.
+	 */
+	flags = pci_dev_msi_enabled(pdev) ? 0 : IRQF_SHARED;
+	err = request_irq(dev->irq, irq_dev_handler, flags, MODULE_NAME, dev);
+	if (err)
+		goto err_vectors;
+
+	pci_set_drvdata(pdev, dev);
+	dev_info(&pdev->dev, "using %s, irq %d\n",
+		 pci_dev_msi_enabled(pdev) ? "MSI" : "INTx", dev->irq);
 	return 0;
 
-fail:
-	unmap_bars(irq_dev);
-	return rv;
+err_vectors:
+	pci_free_irq_vectors(pdev);
+err_unmap:
+	pci_clear_master(pdev);
+	pci_iounmap(pdev, dev->bar0);
+err_regions:
+	pci_release_regions(pdev);
+err_disable:
+	pci_disable_device(pdev);
+err_free:
+	kfree(dev);
+	return err;
 }
 
-static int probe(struct pci_dev *dev, const struct pci_device_id *id)
+static void irq_dev_remove(struct pci_dev *pdev)
 {
-	int rv;
-	u8 irq;
-	struct irq_dev *irq_dev;
+	struct irq_dev *dev = pci_get_drvdata(pdev);
 
-	pr_debug("New pci device probing!\n");
-
-	if (pci_enable_device(dev)) {
-		dev_err(&dev->dev, "can't enable PCI device\n");
-		return -ENODEV;
-	}
-	pci_set_master(dev);
-
-	pci_read_config_byte(dev, PCI_INTERRUPT_LINE, &irq);
-	pr_debug("IRQ: %d\n", irq);
-	pci_read_config_byte(dev, PCI_INTERRUPT_PIN, &irq);
-	pr_debug("IRQ: %d\n", irq);
-
-	irq_dev = kzalloc(sizeof(struct irq_dev), GFP_KERNEL);
-	if (!irq_dev) {
-		pr_err("Allocate memory for 'struct irq_dev' failed!\n");
-		rv = -ENOMEM;
-		goto alloc_err;
-	}
-	irq_dev->pcidev = dev;
-	dev_set_drvdata(&dev->dev, irq_dev);
-
-	rv = pci_request_regions(dev, MODULE_NAME);
-	if (rv) {
-		dev_err(&dev->dev, "can't request regions\n");
-		goto request_regions_err;
-	}
-
-	rv = map_bars(irq_dev);
-	if (rv < 0) {
-		dev_err(&dev->dev, "can't map bars\n");
-		goto map_bars_err;
-	}
-
-	rv = dma_set_mask_and_coherent(&dev->dev, DMA_BIT_MASK(64));
-	if (rv) {
-		dev_err(&dev->dev, "can't set DMA mask\n");
-		goto dma_mask_err;
-	}
-
-	rv = irq_alloc(irq_dev);
-	if (rv < 0) {
-		dev_err(&dev->dev, "can't alloc irq\n");
-		goto irq_err;
-	}
-
-	rv = create_chrdev(irq_dev);
-	if (rv < 0) {
-		dev_err(&dev->dev, "can't create char dev\n");
-		goto create_chrdev_err;
-	}
-
-	return 0;
-
-create_chrdev_err:
-	irq_free(irq_dev);
-irq_err:
-dma_mask_err:
-	unmap_bars(irq_dev);
-map_bars_err:
-	pci_release_regions(dev);
-request_regions_err:
-	dev_set_drvdata(&dev->dev, NULL);
-	kfree(irq_dev);
-alloc_err:
-	pci_disable_device(dev);
-	return rv;
+	free_irq(dev->irq, dev);
+	pci_free_irq_vectors(pdev);
+	pci_clear_master(pdev);
+	pci_iounmap(pdev, dev->bar0);
+	pci_release_regions(pdev);
+	pci_disable_device(pdev);
+	kfree(dev);
 }
 
-static void remove(struct pci_dev *dev)
-{
-	struct irq_dev *irq_dev;
-	irq_dev = dev_get_drvdata(&dev->dev);
-
-	destroy_chrdev(irq_dev);
-	irq_free(irq_dev);
-	unmap_bars(irq_dev);
-	pci_release_regions(dev);
-	dev_set_drvdata(&dev->dev, NULL);
-	kfree(irq_dev);
-	pci_disable_device(dev);
-}
-
-static struct pci_driver pci_driver = {
-	.name		= MODULE_NAME,
-	.id_table	= ids,
-	.probe		= probe,
-	.remove		= remove,
+static struct pci_driver irq_dev_driver = {
+	.name       = MODULE_NAME,
+	.id_table   = irq_dev_ids,
+	.probe      = irq_dev_probe,
+	.remove     = irq_dev_remove,
+	.dev_groups = irq_dev_groups,
 };
 
-static
-int __init m_init(void)
+/* module_pci_driver(irq_dev_driver) generates exactly these two functions */
+static int __init m_init(void)
 {
-	return pci_register_driver(&pci_driver);
+	return pci_register_driver(&irq_dev_driver);
 }
 
-static
-void __exit m_exit(void)
+static void __exit m_exit(void)
 {
-	pci_unregister_driver(&pci_driver);
+	pci_unregister_driver(&irq_dev_driver);
 }
-
 
 module_init(m_init);
 module_exit(m_exit);
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("d0u9");
-MODULE_DESCRIPTION("PCI Driver skel");
+MODULE_DESCRIPTION("MSI and INTx interrupts of QEMU's edu device");

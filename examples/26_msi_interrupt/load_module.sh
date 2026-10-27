@@ -1,40 +1,29 @@
-#! /bin/sh
+#!/bin/sh
+# Extra arguments go to insmod, e.g. "sh load_module.sh load msi=0".
 module="msi_interrupt"
-device="msi_interrupt"
-mode="666"
-group=0
 
-function load() {
-    insmod ./$module.ko $* || exit 1
-
-    rm -f /dev/${device}
-
-    major=$(awk -v device="$device" '$2==device {print $1}' /proc/devices)
-    mknod /dev/${device} c $major 0
-
-    chgrp $group /dev/${device}
-    chmod $mode /dev/${device}
+load() {
+    insmod ./$module.ko "$@" || exit 1
 }
 
-function unload() {
-    rm -f /dev/${device}
+unload() {
     rmmod $module || exit 1
 }
 
 arg=${1:-"load"}
+[ $# -gt 0 ] && shift
 case $arg in
     load)
-        load ;;
+        load "$@" ;;
     unload)
         unload ;;
     reload)
         ( unload )
-        load
+        load "$@"
         ;;
     *)
-        echo "Usage: $0 {load | unload | reload}"
+        echo "Usage: $0 {load | unload | reload} [module parameters]"
         echo "Default is load"
         exit 1
         ;;
 esac
-
