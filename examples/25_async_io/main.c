@@ -1,235 +1,220 @@
+// SPDX-License-Identifier: GPL-2.0
+#include <linux/module.h>
 #include <linux/init.h>
 #include <linux/kernel.h>
-#include <linux/module.h>
-
-#include <linux/fs.h>
 #include <linux/cdev.h>
+#include <linux/fs.h>
+#include <linux/minmax.h>
 #include <linux/slab.h>
-#include <linux/uaccess.h>
 #include <linux/uio.h>
+#include <linux/workqueue.h>
 
 #include "main.h"
 
-struct async_io_dev *async_io_devs;
-int major;
+static struct async_io_dev *async_io_devs;
+static dev_t devno;
+static struct workqueue_struct *async_wq;
 
-static
-int async_io_open(struct inode *inode, struct file *filp)
+static int async_io_open(struct inode *inode, struct file *filp)
 {
-	pr_debug("%s() is invoked\n", __FUNCTION__);
-
-	filp->private_data = container_of(inode->i_cdev, struct async_io_dev, cdev);
+	filp->private_data = container_of(inode->i_cdev, struct async_io_dev,
+					  cdev);
 	return 0;
 }
 
-static
-int async_io_release(struct inode *inode, struct file *filp)
+/* Take as much as there is, up to the end of the buffer, into @to. */
+static ssize_t async_io_do_read(struct async_io_dev *dev, struct iov_iter *to)
 {
-	// remove the async_queue from the file
-	// struct async_io_dev *dev = filp->private_data;
-
-	return 0;
-}
-
-static
-ssize_t async_io_read(struct file *filp, char __user *buff,
-			  size_t count, loff_t *f_pos)
-{
-	struct async_io_dev *dev = filp->private_data;
-	ssize_t len, ret;
+	size_t want, done;
+	ssize_t ret;
 
 	if (mutex_lock_interruptible(&dev->mutex))
 		return -ERESTARTSYS;
 
-	if (dev->len == 0) {
-		ret = 0;
-		goto out;
-	}
-
-	len = min(BUFF_SIZE - dev->read_cur, dev->len);
-	len = min((size_t)len, count);
-
-	if (copy_to_user(buff, dev->buff + dev->read_cur, len)) {
+	want = min_t(size_t, BUFF_SIZE - dev->read_cur, dev->len);
+	want = min(want, iov_iter_count(to));
+	done = copy_to_iter(dev->buff + dev->read_cur, want, to);
+	if (want && !done) {
 		ret = -EFAULT;
 		goto out;
 	}
 
-	dev->read_cur = (dev->read_cur + len) % BUFF_SIZE;
-	dev->len -= len;
-	ret = len;
-
-	pr_debug("Read: write_cur=%d, read_cur=%d, len=%d, ret=%ld\n",
-		 dev->write_cur, dev->read_cur, dev->len, len);
-
+	dev->read_cur = (dev->read_cur + done) % BUFF_SIZE;
+	dev->len -= done;
+	ret = done;
+	pr_debug("read %zu, %d left\n", done, dev->len);
 out:
 	mutex_unlock(&dev->mutex);
 	return ret;
 }
 
-static
-ssize_t async_io_write(struct file *filp, const char __user *buff,
-			   size_t count, loff_t *f_pos)
+/* Store as much of @from as fits, up to the end of the buffer. */
+static ssize_t async_io_do_write(struct async_io_dev *dev,
+				 struct iov_iter *from)
 {
-	struct async_io_dev *dev = filp->private_data;
-	ssize_t len, ret;
+	size_t want, done;
+	ssize_t ret;
 
 	if (mutex_lock_interruptible(&dev->mutex))
 		return -ERESTARTSYS;
 
 	if (dev->len == BUFF_SIZE) {
-		ret = 0;
+		ret = -ENOSPC;
 		goto out;
 	}
 
-	len = min(BUFF_SIZE - dev->write_cur, BUFF_SIZE - dev->len);
-	len = min((size_t)len, count);
-
-	if (copy_from_user(dev->buff + dev->write_cur, buff, len)) {
+	want = min_t(size_t, BUFF_SIZE - dev->write_cur, BUFF_SIZE - dev->len);
+	want = min(want, iov_iter_count(from));
+	done = copy_from_iter(dev->buff + dev->write_cur, want, from);
+	if (want && !done) {
 		ret = -EFAULT;
 		goto out;
 	}
 
-	dev->write_cur = (dev->write_cur + len) % BUFF_SIZE;
-	dev->len += len;
-	ret = len;
-
-	pr_debug("Write: write_cur=%d, read_cur=%d, len=%d, ret=%ld\n",
-		 dev->write_cur, dev->read_cur, dev->len, len);
-
+	dev->write_cur = (dev->write_cur + done) % BUFF_SIZE;
+	dev->len += done;
+	ret = done;
+	pr_debug("wrote %zu, %d in buffer\n", done, dev->len);
 out:
 	mutex_unlock(&dev->mutex);
 	return ret;
 }
 
+/*
+ * Asynchronous requests. The data is copied when the request is submitted,
+ * while the iov_iter is still valid and we run in the submitter's context:
+ * a worker runs in a kernel thread, without the user's memory, and the
+ * iov_iter lives on the submitter's stack. Only the completion is deferred,
+ * as if a device took ASYNC_DELAY_MS to do the transfer; a real driver
+ * would call ki_complete() from its interrupt handler instead.
+ */
 struct async_work {
 	struct delayed_work work;
 	struct kiocb *iocb;
-	struct iov_iter *tofrom;
+	ssize_t result;
 };
 
-static
-void async_do_deferred_op(struct work_struct *work)
+static void async_io_complete(struct work_struct *work)
 {
-	struct async_work *stuff = container_of(work, struct async_work, work.work);
-	if (iov_iter_rw(stuff->tofrom) == WRITE) {
-		generic_file_write_iter(stuff->iocb, stuff->tofrom);
-	} else {
-		generic_file_read_iter(stuff->iocb, stuff->tofrom);
-	}
-	kfree(stuff);
+	struct async_work *aw = container_of(to_delayed_work(work),
+					     struct async_work, work);
+
+	pr_debug("complete: %zd\n", aw->result);
+	/* hand the result to whoever submitted it: AIO or io_uring */
+	aw->iocb->ki_complete(aw->iocb, aw->result);
+	kfree(aw);
 }
 
-static
-int async_defer_op(struct kiocb *iocb, struct iov_iter *tofrom)
+static ssize_t async_io_defer(struct kiocb *iocb, ssize_t result)
 {
-	struct async_work *stuff;
-	int result;
+	struct async_work *aw;
 
-	/* Otherwise defer the completion for a few milliseconds. */
-	stuff = kmalloc (sizeof (*stuff), GFP_KERNEL);
-	if (stuff == NULL)
-		return result; /* No memory, just complete now */
+	aw = kmalloc_obj(*aw);
+	if (!aw)
+		return result;	/* complete now; the caller reports it */
 
-	stuff->iocb = iocb;
-	INIT_DELAYED_WORK(&stuff->work, async_do_deferred_op);
-	schedule_delayed_work(&stuff->work, HZ/10000);
+	aw->iocb = iocb;
+	aw->result = result;
+	INIT_DELAYED_WORK(&aw->work, async_io_complete);
+	queue_delayed_work(async_wq, &aw->work,
+			   msecs_to_jiffies(ASYNC_DELAY_MS));
 
+	/* a promise: ki_complete() will be called later */
 	return -EIOCBQUEUED;
 }
 
-static
-ssize_t async_io_read_iter(struct kiocb *iocb, struct iov_iter *to)
+/*
+ * read(2) comes here too, with a synchronous kiocb; io_submit(2) and
+ * io_uring bring asynchronous ones, which have ki_complete set.
+ */
+static ssize_t async_io_read_iter(struct kiocb *iocb, struct iov_iter *to)
 {
-	if (is_sync_kiocb(iocb))
-		return generic_file_read_iter(iocb, to);
+	ssize_t ret = async_io_do_read(iocb->ki_filp->private_data, to);
 
-	return async_defer_op(iocb, to);
+	if (is_sync_kiocb(iocb) || ret < 0)
+		return ret;
+	return async_io_defer(iocb, ret);
 }
 
-static
-ssize_t async_io_write_iter(struct kiocb *iocb, struct iov_iter *from)
+static ssize_t async_io_write_iter(struct kiocb *iocb, struct iov_iter *from)
 {
-	if (is_sync_kiocb(iocb))
-		return generic_file_write_iter(iocb, from);
+	ssize_t ret = async_io_do_write(iocb->ki_filp->private_data, from);
 
-	return async_defer_op(iocb, from);
+	if (is_sync_kiocb(iocb) || ret < 0)
+		return ret;
+	return async_io_defer(iocb, ret);
 }
 
-static struct file_operations fops = {
-	.open	 = async_io_open,
-	.release = async_io_release,
-	.read    = async_io_read,
-	.write   = async_io_write,
+/*
+ * Only the _iter methods: .read and .write are the older interface, and
+ * when both exist read(2) and write(2) use .read and .write.
+ */
+static const struct file_operations async_io_fops = {
+	.owner      = THIS_MODULE,
+	.open       = async_io_open,
 	.read_iter  = async_io_read_iter,
 	.write_iter = async_io_write_iter,
 };
 
-static
-int __init m_init(void)
+static int __init m_init(void)
 {
-	dev_t devno;
-	int i, err = 0;
+	int i, err;
 
-	pr_debug(MODULE_NAME " is loaded\n");
-
-	async_io_devs = kcalloc(DEV_NR, sizeof(struct async_io_dev), GFP_KERNEL);
-	if (!async_io_devs) {
-		pr_debug("Cannot alloc memory!\n");
+	/*
+	 * A workqueue of our own, so that unloading can wait for the last
+	 * completion to return. A pending request holds its file, and the
+	 * file the module, but the worker still runs module code afterwards.
+	 */
+	async_wq = alloc_workqueue(MODULE_NAME, WQ_UNBOUND, 0);
+	if (!async_wq)
 		return -ENOMEM;
+
+	async_io_devs = kzalloc_objs(*async_io_devs, DEV_NR);
+	if (!async_io_devs) {
+		err = -ENOMEM;
+		goto err_wq;
 	}
 
 	err = alloc_chrdev_region(&devno, 0, DEV_NR, MODULE_NAME);
-	if (err < 0) {
-		pr_debug("Can't get major!\n");
-		goto err_major;
-	}
-	major = MAJOR(devno);
+	if (err)
+		goto err_free;
 
 	for (i = 0; i < DEV_NR; i++) {
-		cdev_init(&async_io_devs[i].cdev, &fops);
-		async_io_devs[i].cdev.owner = THIS_MODULE;
 		mutex_init(&async_io_devs[i].mutex);
-		devno = MKDEV(major, i);
-		err = cdev_add(&async_io_devs[i].cdev, devno, 1);
-		if (err) {
-			pr_err("Error when adding new device\n");
-			goto err_add;
-		}
+		cdev_init(&async_io_devs[i].cdev, &async_io_fops);
+		async_io_devs[i].cdev.owner = THIS_MODULE;
+		err = cdev_add(&async_io_devs[i].cdev, devno + i, 1);
+		if (err)
+			goto err_cdev;
 	}
 
 	return 0;
 
-err_add:
-	for (; i > 0; i--) {
+err_cdev:
+	while (i--)
 		cdev_del(&async_io_devs[i].cdev);
-	}
-err_major:
+	unregister_chrdev_region(devno, DEV_NR);
+err_free:
 	kfree(async_io_devs);
+err_wq:
+	destroy_workqueue(async_wq);
 	return err;
 }
 
-static
-void __exit m_exit(void)
+static void __exit m_exit(void)
 {
 	int i;
-	dev_t devno;
 
-	pr_debug(MODULE_NAME " unloaded\n");
-
-	for (i = 0; i < DEV_NR; i++) {
+	for (i = 0; i < DEV_NR; i++)
 		cdev_del(&async_io_devs[i].cdev);
-	}
-
-	devno = MKDEV(major, 0);
 	unregister_chrdev_region(devno, DEV_NR);
-
 	kfree(async_io_devs);
+	destroy_workqueue(async_wq);	/* waits for running completions */
 }
 
 module_init(m_init);
 module_exit(m_exit);
 
-MODULE_AUTHOR("d0u9");
 MODULE_LICENSE("GPL");
-MODULE_DESCRIPTION("Asynchronous I/O");
-
+MODULE_AUTHOR("d0u9");
+MODULE_DESCRIPTION("Asynchronous I/O with ki_complete()");

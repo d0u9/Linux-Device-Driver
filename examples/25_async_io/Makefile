@@ -1,5 +1,4 @@
 ifneq ($(KERNELRELEASE),)
-    ccflags-y := -DENABLE_DEBUG
     async_io-objs := main.o
     obj-m := async_io.o
     CFLAGS_main.o := -DDEBUG

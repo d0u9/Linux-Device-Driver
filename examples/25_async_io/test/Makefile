@@ -1,7 +1,10 @@
+# Static, so it runs in the guest without its libraries.
+BIN := aio_test.out
+
 .PHONY: all
 all:
-	$(CC) --static -pthread -o async_notify.out async_notify.c
+	$(CC) -Wall -static -o $(BIN) aio_test.c
 
 .PHONY: clean
 clean:
-	rm -f async_notify.out
+	rm -f $(BIN)
