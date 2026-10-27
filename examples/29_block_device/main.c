@@ -1,359 +1,294 @@
-#include <linux/kernel.h>
+// SPDX-License-Identifier: GPL-2.0
 #include <linux/module.h>
-#include <linux/cdev.h>
 #include <linux/init.h>
-#include <linux/slab.h>
-#include <linux/blkdev.h>
-#include <linux/vmalloc.h>
+#include <linux/kernel.h>
+#include <linux/bio.h>
 #include <linux/blk-mq.h>
+#include <linux/blkdev.h>
+#include <linux/log2.h>
+#include <linux/slab.h>
+#include <linux/string.h>
+#include <linux/vmalloc.h>
 
 #include "main.h"
 
-#define INVALIDATE_DELAY	(30 * HZ)
+static unsigned long nsectors = 32768;
+module_param(nsectors, ulong, 0444);
+MODULE_PARM_DESC(nsectors, "disk size in blocks of hardsect_size (default 32768)");
 
-static struct ldd_dev *ldd_dev;
-static int nsectors = 1024 * 1024;
-module_param(nsectors, int, 0);
 static int hardsect_size = 512;
-module_param(hardsect_size, int, 0);
+module_param(hardsect_size, int, 0444);
+MODULE_PARM_DESC(hardsect_size, "logical block size: 512 up to the page size (default 512)");
 
 enum {
-	RM_SIMPLE  = 0,	/* The extra-simple request function */
-	RM_FULL    = 1,	/* The full-blown version */
-	RM_NOQUEUE = 2,	/* Use make_request */
+	RM_SIMPLE  = 0,	/* blk-mq, a request walked segment by segment */
+	RM_FULL    = 1,	/* blk-mq, a request walked bio by bio */
+	RM_NOQUEUE = 2,	/* bio-based, ->submit_bio(), no request queue */
 };
 static int request_mode = RM_SIMPLE;
-module_param(request_mode, int, 0);
+module_param(request_mode, int, 0444);
+MODULE_PARM_DESC(request_mode, "0: blk-mq, by segment (default), 1: blk-mq, by bio, 2: bio-based");
 
-static
-int block_revalidate(struct gendisk *gdisk)
+static struct memdisk *memdisk;
+
+/*
+ * Copy one segment between the disk and memory. The block layer counts
+ * sectors in 512 bytes, whatever the disk's block size. A bio_vec is a
+ * page, an offset and a length; memcpy_{from,to}_bvec() map the page for
+ * the copy.
+ */
+static blk_status_t memdisk_transfer(struct memdisk *dev, sector_t sector,
+				     struct bio_vec *bvec, bool write)
 {
-	struct ldd_dev *ldd_dev = gdisk->private_data;
+	u64 offset = (u64)sector << SECTOR_SHIFT;
 
-	if (ldd_dev->media_change) {
-		ldd_dev->media_change = false;
-		memset(ldd_dev->data, 0, ldd_dev->size);
-	}
+	if (offset + bvec->bv_len > dev->size)
+		return BLK_STS_IOERR;
 
-	return 0;
-}
-
-static
-int block_open(struct gendisk *gdisk, blk_mode_t mode)
-{
-	struct ldd_dev *ldd_dev = gdisk->private_data;
-	bool first;
-
-	timer_delete_sync(&ldd_dev->timer);
-	spin_lock(&ldd_dev->lock);
-	first = !ldd_dev->users;
-	ldd_dev->users++;
-	spin_unlock(&ldd_dev->lock);
-
-	/* disk_check_media_change() may sleep, so call it outside the spinlock. */
-	if (first && disk_check_media_change(gdisk))
-		block_revalidate(gdisk);
-
-	return 0;
-}
-
-static
-void block_release(struct gendisk *gdisk)
-{
-	struct ldd_dev *ldd_dev = gdisk->private_data;
-
-	spin_lock(&ldd_dev->lock);
-	ldd_dev->users--;
-
-	if (!ldd_dev->users) {
-		ldd_dev->timer.expires = jiffies + INVALIDATE_DELAY;
-		add_timer(&ldd_dev->timer);
-	}
-	spin_unlock(&ldd_dev->lock);
-}
-
-static
-unsigned int block_check_events(struct gendisk *gdisk, unsigned int clearing)
-{
-	struct ldd_dev *ldd_dev = gdisk->private_data;
-
-	return ldd_dev->media_change ? DISK_EVENT_MEDIA_CHANGE : 0;
-}
-
-static const struct block_device_operations block_ops = {
-	.owner           = THIS_MODULE,
-	.open 	         = block_open,
-	.release 	 = block_release,
-	.check_events    = block_check_events,
-	// .ioctl	         = sbull_ioctl
-};
-
-static
-void transfer(struct ldd_dev *ldd_dev, unsigned long sector,
-	      unsigned long nsect, char *buffer, int dir)
-{
-	unsigned long offset = sector << SECTOR_SHIFT;
-	unsigned long nbytes = nsect << SECTOR_SHIFT;
-
-	if ((offset + nbytes) > ldd_dev->size) {
-		pr_notice("Write out of size: (%ld, %ld)\n", offset, nbytes);
-		return;
-	}
-
-	if (dir == WRITE)
-		memcpy(ldd_dev->data + offset, buffer, nbytes);
+	if (write)
+		memcpy_from_bvec(dev->data + offset, bvec);
 	else
-		memcpy(buffer, ldd_dev->data + offset, nbytes);
+		memcpy_to_bvec(bvec, dev->data + offset);
+	return BLK_STS_OK;
 }
 
-static
-blk_status_t ldd_block_request_simple(struct blk_mq_hw_ctx *hctx,
-			       const struct blk_mq_queue_data *qd)
+/* Transfer every segment of one bio, which covers consecutive sectors. */
+static blk_status_t memdisk_xfer_bio(struct memdisk *dev, struct bio *bio)
 {
-	struct request *req = qd->rq;
-	struct ldd_dev *dev = req->q->queuedata;
-	struct bio_vec bvec;
-	struct req_iterator iter;
-	sector_t pos_sector = blk_rq_pos(req);
-	void *buffer;
-	blk_status_t ret = BLK_STS_OK;
-
-	blk_mq_start_request(req);
-
-	if (blk_rq_is_passthrough(req)) {
-		pr_notice("Skip non-fs request\n");
-		ret = BLK_STS_IOERR;
-		goto done;
-	}
-
-	rq_for_each_segment(bvec, req, iter) {
-		size_t num_sector = blk_rq_cur_sectors(req);
-		bool dir = rq_data_dir(req);
-		pr_notice("Req dir: %d, sec %lld, nr %ld\n",
-			  dir, pos_sector, num_sector);
-		buffer = page_address(bvec.bv_page) + bvec.bv_offset;
-		transfer(dev, pos_sector, num_sector, buffer, dir);
-		pos_sector += num_sector;
-	}
-
-
-done:
-	blk_mq_end_request(req, ret);
-	return ret;
-}
-
-static struct blk_mq_ops mq_ops_simple = {
-	.queue_rq = ldd_block_request_simple,
-};
-
-static
-int block_xfer_bio(struct ldd_dev *ldd_dev, struct bio *bio)
-{
-	struct bio_vec bvec;
-	struct bvec_iter iter;
-	char *buffer;
 	sector_t sector = bio->bi_iter.bi_sector;
+	bool write = bio_data_dir(bio) == WRITE;
+	blk_status_t status;
+	struct bvec_iter iter;
+	struct bio_vec bvec;
 
 	bio_for_each_segment(bvec, bio, iter) {
-		buffer = kmap_atomic(bvec.bv_page) + bvec.bv_offset;
-		transfer(ldd_dev, sector, (bvec.bv_len >> SECTOR_SHIFT),
-			 buffer, bio_data_dir(bio));
-
-		sector += (bvec.bv_len >> SECTOR_SHIFT);
-
-		kunmap_atomic(buffer);
+		status = memdisk_transfer(dev, sector, &bvec, write);
+		if (status)
+			return status;
+		sector += bvec.bv_len >> SECTOR_SHIFT;
 	}
-
-	return 0;
+	return BLK_STS_OK;
 }
 
-static
-int block_xfer_request(struct ldd_dev *ldd_dev, struct request *req)
+static bool memdisk_rw(enum req_op op)
 {
+	return op == REQ_OP_READ || op == REQ_OP_WRITE;
+}
+
+/*
+ * blk-mq: the block layer has merged adjacent bios into a request and may
+ * have reordered requests with its scheduler. A request covers
+ * consecutive sectors; it is a list of bios, each a list of segments.
+ *
+ * Simple: walk the request's segments, across all its bios, in one loop.
+ */
+static blk_status_t memdisk_queue_rq_simple(struct blk_mq_hw_ctx *hctx,
+					    const struct blk_mq_queue_data *bd)
+{
+	struct request *rq = bd->rq;
+	struct memdisk *dev = rq->q->queuedata;
+	sector_t sector = blk_rq_pos(rq);
+	bool write = rq_data_dir(rq) == WRITE;
+	blk_status_t status = BLK_STS_NOTSUPP;
+	struct req_iterator iter;
+	struct bio_vec bvec;
+
+	blk_mq_start_request(rq);
+
+	if (memdisk_rw(req_op(rq))) {
+		rq_for_each_segment(bvec, rq, iter) {
+			status = memdisk_transfer(dev, sector, &bvec, write);
+			if (status)
+				break;
+			sector += bvec.bv_len >> SECTOR_SHIFT;
+		}
+	}
+
+	/*
+	 * The request is completed here, so return OK whatever its status:
+	 * an error return would make blk-mq complete it a second time.
+	 */
+	blk_mq_end_request(rq, status);
+	return BLK_STS_OK;
+}
+
+/*
+ * Full: walk the same request bio by bio, then each bio segment by
+ * segment. It moves the same data as the simple version; it only spells
+ * out the two levels that rq_for_each_segment() hides. In LDD3 the two
+ * differed: the simple request function did only the request's current
+ * chunk per call and completed it in pieces, which blk-mq no longer allows.
+ */
+static blk_status_t memdisk_queue_rq_full(struct blk_mq_hw_ctx *hctx,
+					  const struct blk_mq_queue_data *bd)
+{
+	struct request *rq = bd->rq;
+	struct memdisk *dev = rq->q->queuedata;
+	blk_status_t status = BLK_STS_NOTSUPP;
 	struct bio *bio;
-	int nsect = 0;
 
-	__rq_for_each_bio(bio, req) {
-		block_xfer_bio(ldd_dev, bio);
-		nsect += bio->bi_iter.bi_size >> SECTOR_SHIFT;
-	}
-	return 0;
-}
+	blk_mq_start_request(rq);
 
-static
-blk_status_t ldd_block_request_full(struct blk_mq_hw_ctx *hctx,
-			       const struct blk_mq_queue_data *qd)
-{
-	blk_status_t rv = BLK_STS_OK;
-	int sectors_xferred;
-	struct request *req = qd->rq;
-	struct ldd_dev *ldd_dev = req->q->queuedata;
-
-	blk_mq_start_request(req);
-
-
-	if (blk_rq_is_passthrough(req)) {
-		pr_notice("Skip non-fs request\n");
-		rv = BLK_STS_IOERR;
-		goto done;
+	if (memdisk_rw(req_op(rq))) {
+		__rq_for_each_bio(bio, rq) {
+			status = memdisk_xfer_bio(dev, bio);
+			if (status)
+				break;
+		}
 	}
 
-	sectors_xferred = block_xfer_request(ldd_dev, req);
-
-done:
-	blk_mq_end_request(req, rv);
-
-	return rv;
+	blk_mq_end_request(rq, status);
+	return BLK_STS_OK;
 }
 
-static struct blk_mq_ops mq_ops_full = {
-	.queue_rq = ldd_block_request_full,
+static const struct blk_mq_ops memdisk_mq_ops_simple = {
+	.queue_rq = memdisk_queue_rq_simple,
 };
 
-static void timeout_cb(struct timer_list *timer)
+static const struct blk_mq_ops memdisk_mq_ops_full = {
+	.queue_rq = memdisk_queue_rq_full,
+};
+
+/*
+ * bio-based: no request queue, no merging, no scheduler; each bio comes
+ * here as it is submitted. Stacking drivers (dm, md) and RAM disks (brd,
+ * zram) work this way.
+ */
+static void memdisk_submit_bio(struct bio *bio)
 {
-	struct ldd_dev *ldd_dev = timer_container_of(ldd_dev, timer, timer);
+	struct memdisk *dev = bio->bi_bdev->bd_disk->private_data;
 
-	spin_lock(&ldd_dev->lock);
-	pr_warn("timeout!!\n");	
-	spin_unlock(&ldd_dev->lock);
-}
-
-static
-void block_submit_bio(struct bio *bio)
-{
-	int status;
-	struct ldd_dev *ldd_dev = bio->bi_bdev->bd_disk->private_data;
-
-	status = block_xfer_bio(ldd_dev, bio);
-	bio->bi_status = status;
+	if (memdisk_rw(bio_op(bio)))
+		bio->bi_status = memdisk_xfer_bio(dev, bio);
+	else
+		bio->bi_status = BLK_STS_NOTSUPP;
 	bio_endio(bio);
 }
 
-/* A bio-based disk handles I/O in ->submit_bio instead of a request queue. */
-static const struct block_device_operations block_ops_bio = {
-	.owner           = THIS_MODULE,
-	.open 	         = block_open,
-	.release 	 = block_release,
-	.check_events    = block_check_events,
-	.submit_bio      = block_submit_bio,
+static const struct block_device_operations memdisk_fops = {
+	.owner = THIS_MODULE,
 };
 
-static
-struct gendisk *alloc_mq_disk(struct ldd_dev *ldd_dev,
-			      const struct blk_mq_ops *ops,
-			      struct queue_limits *lim)
+static const struct block_device_operations memdisk_bio_fops = {
+	.owner      = THIS_MODULE,
+	.submit_bio = memdisk_submit_bio,
+};
+
+static int memdisk_create_disk(struct memdisk *dev)
 {
-	struct gendisk *gd;
-	int rv;
-
-	rv = blk_mq_alloc_sq_tag_set(&ldd_dev->tag_set, ops, 256, 0);
-	if (rv)
-		return ERR_PTR(rv);
-
-	gd = blk_mq_alloc_disk(&ldd_dev->tag_set, lim, ldd_dev);
-	if (IS_ERR(gd))
-		blk_mq_free_tag_set(&ldd_dev->tag_set);
-
-	return gd;
-}
-
-static
-int setup_device(struct ldd_dev *ldd_dev)
-{
-	int rv = 0;
-	struct gendisk *gd;
 	struct queue_limits lim = {
 		.logical_block_size = hardsect_size,
 	};
+	struct gendisk *gd;
+	int err;
 
-	ldd_dev->size = nsectors * hardsect_size;	
-	ldd_dev->users = 0;
-	ldd_dev->media_change = false;
-	ldd_dev->data = vmalloc(ldd_dev->size);
-	if (!ldd_dev->data) {
-		pr_err("Allocat vm space failed\n");
-		return -ENOMEM;
-	}
-	spin_lock_init(&ldd_dev->lock);
-	timer_setup(&ldd_dev->timer, timeout_cb, 0);
-
-	pr_err("REQUEST_MODE = %d\n", request_mode);
-	switch (request_mode) {
-	case RM_NOQUEUE:
+	if (request_mode == RM_NOQUEUE) {
 		gd = blk_alloc_disk(&lim, NUMA_NO_NODE);
-		break;
-	case RM_FULL:
-		gd = alloc_mq_disk(ldd_dev, &mq_ops_full, &lim);
-		break;
-	default:
-		pr_notice("fallbackk to simple!\n");
-		fallthrough;
-	case RM_SIMPLE:
-		gd = alloc_mq_disk(ldd_dev, &mq_ops_simple, &lim);
-		break;
+	} else {
+		/* one hardware queue, up to 128 requests in flight */
+		err = blk_mq_alloc_sq_tag_set(&dev->tag_set,
+					      request_mode == RM_FULL ?
+					      &memdisk_mq_ops_full :
+					      &memdisk_mq_ops_simple,
+					      128, 0);
+		if (err)
+			return err;
+		gd = blk_mq_alloc_disk(&dev->tag_set, &lim, dev);
 	}
 	if (IS_ERR(gd)) {
-		pr_err("Alloc disk failure\n");
-		rv = PTR_ERR(gd);
-		goto out_vfree;
+		err = PTR_ERR(gd);
+		goto err_tags;
 	}
 
-	gd->major = ldd_dev->major;
+	gd->major = dev->major;
 	gd->first_minor = 0;
-	gd->minors = 16;
-	gd->fops = (request_mode == RM_NOQUEUE) ? &block_ops_bio : &block_ops;
-	gd->events = DISK_EVENT_MEDIA_CHANGE;
-	gd->private_data = ldd_dev;
-	snprintf(gd->disk_name, DISK_NAME_LEN, "memdisk");
-	set_capacity(gd, nsectors * (hardsect_size / SECTOR_SIZE));
+	gd->minors = MEMDISK_MINORS;
+	gd->fops = request_mode == RM_NOQUEUE ? &memdisk_bio_fops : &memdisk_fops;
+	gd->private_data = dev;
+	strscpy(gd->disk_name, MODULE_NAME);
+	set_capacity(gd, dev->size >> SECTOR_SHIFT);	/* in 512-byte sectors */
 
-	// Activate this block device
-	rv = add_disk(gd);
-	if (rv) {
+	/* the disk goes live: partitions are scanned, /dev/memdisk appears */
+	err = add_disk(gd);
+	if (err) {
 		put_disk(gd);
-		if (request_mode != RM_NOQUEUE)
-			blk_mq_free_tag_set(&ldd_dev->tag_set);
-		goto out_vfree;
+		goto err_tags;
 	}
-	ldd_dev->gd = gd;
 
+	dev->gd = gd;
 	return 0;
 
-out_vfree:
-	if (ldd_dev->data)
-		vfree(ldd_dev->data);
-
-	return rv;
+err_tags:
+	if (request_mode != RM_NOQUEUE)
+		blk_mq_free_tag_set(&dev->tag_set);
+	return err;
 }
 
-static
-int __init m_init(void)
+static void memdisk_destroy_disk(struct memdisk *dev)
 {
-	ldd_dev = kzalloc(sizeof(struct ldd_dev), GFP_KERNEL);
-	if (!ldd_dev)
+	del_gendisk(dev->gd);
+	put_disk(dev->gd);
+	if (request_mode != RM_NOQUEUE)
+		blk_mq_free_tag_set(&dev->tag_set);
+}
+
+static int __init m_init(void)
+{
+	int err;
+
+	if (!is_power_of_2(hardsect_size) || hardsect_size < SECTOR_SIZE ||
+	    hardsect_size > PAGE_SIZE || !nsectors ||
+	    request_mode < RM_SIMPLE || request_mode > RM_NOQUEUE)
+		return -EINVAL;
+
+	memdisk = kzalloc_obj(*memdisk);
+	if (!memdisk)
 		return -ENOMEM;
 
-	ldd_dev->major = register_blkdev(0, MODULE_NAME);
+	memdisk->size = (u64)nsectors * hardsect_size;
+	memdisk->data = vzalloc(memdisk->size);
+	if (!memdisk->data) {
+		err = -ENOMEM;
+		goto err_free;
+	}
 
-	setup_device(ldd_dev);
-	
+	/*
+	 * A major of our own, shown in /proc/devices. Without one, leaving
+	 * gd->major 0, add_disk() takes numbers from the shared dynamic
+	 * block major instead.
+	 */
+	memdisk->major = register_blkdev(0, MODULE_NAME);
+	if (memdisk->major < 0) {
+		err = memdisk->major;
+		goto err_vfree;
+	}
+
+	err = memdisk_create_disk(memdisk);
+	if (err)
+		goto err_major;
+
 	return 0;
+
+err_major:
+	unregister_blkdev(memdisk->major, MODULE_NAME);
+err_vfree:
+	vfree(memdisk->data);
+err_free:
+	kfree(memdisk);
+	return err;
 }
 
-static
-void __exit m_exit(void)
+static void __exit m_exit(void)
 {
-	if (ldd_dev->gd)
-		del_gendisk(ldd_dev->gd);
-
-	unregister_blkdev(ldd_dev->major, MODULE_NAME);
+	memdisk_destroy_disk(memdisk);
+	unregister_blkdev(memdisk->major, MODULE_NAME);
+	vfree(memdisk->data);
+	kfree(memdisk);
 }
-
 
 module_init(m_init);
 module_exit(m_exit);
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("d0u9");
-MODULE_DESCRIPTION("PCI Driver skel");
+MODULE_DESCRIPTION("A RAM disk with blk-mq or bio-based I/O");
