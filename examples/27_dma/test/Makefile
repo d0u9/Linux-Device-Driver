@@ -1,9 +1,10 @@
-BIN = dma.out
+# Static, so it runs in the guest without its libraries.
+BIN := dma.out
 
 .PHONY: all
 all:
-	$(CC) -I../ -static -o $(BIN) main.c
+	$(CC) -Wall -static -o $(BIN) main.c
 
 .PHONY: clean
 clean:
-	rm -fr $(BIN)
+	rm -f $(BIN)

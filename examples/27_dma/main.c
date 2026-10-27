@@ -1,417 +1,350 @@
-#include <linux/kernel.h>
+// SPDX-License-Identifier: GPL-2.0
 #include <linux/module.h>
-#include <linux/pci.h>
-#include <linux/cdev.h>
 #include <linux/init.h>
-#include <linux/delay.h>
+#include <linux/kernel.h>
+#include <linux/cdev.h>
+#include <linux/completion.h>
+#include <linux/dma-mapping.h>
+#include <linux/fs.h>
+#include <linux/interrupt.h>
+#include <linux/io.h>
+#include <linux/pci.h>
+#include <linux/slab.h>
+#include <linux/uaccess.h>
 
 #include "main.h"
-#include "ioctl_cmd.h"
 
-#define PCI_VENDOR_ID_QEMU		0x1234
-#define PCI_KMOD_EDU_VENDOR_ID		PCI_VENDOR_ID_QEMU
-// #define PCI_KMOD_EDU_DEVICE_ID		0x7863
-#define PCI_KMOD_EDU_DEVICE_ID		0x11e8
+static bool msi = true;
+module_param(msi, bool, 0444);
+MODULE_PARM_DESC(msi, "use MSI (default), or the INTx line if 0");
 
-static struct pci_device_id ids[] = {
-	{ PCI_DEVICE(PCI_KMOD_EDU_VENDOR_ID, PCI_KMOD_EDU_DEVICE_ID), },
-	{ 0, }
+static dev_t devno;
+
+static const struct pci_device_id dma_dev_ids[] = {
+	{ PCI_DEVICE(EDU_VENDOR_ID, EDU_DEVICE_ID) },
+	{ }
 };
-MODULE_DEVICE_TABLE(pci, ids);
+MODULE_DEVICE_TABLE(pci, dma_dev_ids);
 
-static int dev_open(struct inode *inode, struct file *filp)
+/*
+ * Copy @len bytes between our buffer and edu's buffer at @edu_addr, and
+ * wait until edu is done. Called with dev->lock held.
+ *
+ * The device is given bus addresses (dma_addr_t), never kernel pointers.
+ * writeq() stores the values little-endian, as PCI registers are, so no
+ * cpu_to_le64() is needed. edu runs the transfer about 100 ms later and
+ * then interrupts with EDU_IRQ_DMA in its status.
+ */
+static int edu_dma(struct dma_dev *dev, u64 edu_addr, bool to_ram, size_t len)
 {
-	filp->private_data = container_of(inode->i_cdev, struct irq_dev, cdev);
+	u64 cmd = EDU_DMA_START | EDU_DMA_IRQ;
 
-#if 0
-	struct irq_dev *irq_dev;
-	irq_dev = container_of(inode->i_cdev, struct irq_dev, cdev);
-	int i, buf_len = DMA_SIZE / sizeof(int);
-	int *dma_buf = irq_dev->dma_buf;
+	reinit_completion(&dev->dma_done);
 
-	// prepare data
-	for (i = 0; i < buf_len; i++) {
-		dma_buf[i] = i;
-	}
-	
-	// src
-	iowrite32(cpu_to_le32(irq_dev->dma_addr), irq_dev->bar[0] + 0x80);
-	// dst
-	iowrite32(0x40000, irq_dev->bar[0] + 0x88);
-	iowrite32(cpu_to_le32(DMA_SIZE), irq_dev->bar[0] + 0x90);
-	iowrite32(0x04 | 0x01, irq_dev->bar[0] + 0x98);
-#endif
-
-	return 0;
-}
-
-static
-long dma_to(struct irq_dev *irq_dev, void __user *arg, bool to_dev)
-{
-	int rv;
-	struct ioc_arg ioc_arg;
-
-	pr_debug("dma_to_dev invoked!\n");
-
-	rv = copy_from_user(&ioc_arg, arg, sizeof(struct ioc_arg));
-	if (rv) {
-		pr_err("copy from user faild!\n");
-		return -EFAULT;
-	}
-
-	if (ioc_arg.len > DMA_SIZE) {
-		pr_err("Data size overflow!\n");
-		return -EFAULT;
-	}
-
-	memset(irq_dev->dma_buf, 0, DMA_SIZE);
-	if (to_dev) {
-		rv = copy_from_user(irq_dev->dma_buf, ioc_arg.buf, ioc_arg.len);
-		if (rv) {
-			pr_err("copy from user 2 fail!\n");
-			return -EFAULT;
-		}
-	}
-	
-	if (to_dev) {
-		// src
-		iowrite32(cpu_to_le32(irq_dev->dma_addr), irq_dev->bar[0] + 0x80);
-		// dst
-		iowrite32(0x40000, irq_dev->bar[0] + 0x88);
-		iowrite32(cpu_to_le32(DMA_SIZE), irq_dev->bar[0] + 0x90);
-		iowrite32(0x04 | 0x01, irq_dev->bar[0] + 0x98);
+	if (to_ram) {
+		writeq(edu_addr, dev->bar0 + EDU_REG_DMA_SRC);
+		writeq(dev->buf_bus, dev->bar0 + EDU_REG_DMA_DST);
+		cmd |= EDU_DMA_TO_RAM;
 	} else {
-		// src
-		iowrite32(0x40000, irq_dev->bar[0] + 0x80);
-		// dst
-		iowrite32(cpu_to_le32(irq_dev->dma_addr), irq_dev->bar[0] + 0x88);
-		iowrite32(cpu_to_le32(DMA_SIZE), irq_dev->bar[0] + 0x90);
-		iowrite32(0x04 | 0x02 | 0x01, irq_dev->bar[0] + 0x98);
+		writeq(dev->buf_bus, dev->bar0 + EDU_REG_DMA_SRC);
+		writeq(edu_addr, dev->bar0 + EDU_REG_DMA_DST);
 	}
+	writeq(len, dev->bar0 + EDU_REG_DMA_COUNT);
+	writeq(cmd, dev->bar0 + EDU_REG_DMA_CMD);
 
+	if (!wait_for_completion_timeout(&dev->dma_done,
+					 msecs_to_jiffies(1000)))
+		return -ETIMEDOUT;
 	return 0;
 }
 
-static
-long dev_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
+static irqreturn_t dma_dev_handler(int irq, void *dev_id)
 {
-	int rv = 0;
-	struct irq_dev *irq_dev = filp->private_data;
+	struct dma_dev *dev = dev_id;
+	u32 status;
 
-	pr_err("---> %s\n", (char*)(irq_dev->dma_buf));
-	pr_debug("dev_ioctl invoked()!\n");
+	status = ioread32(dev->bar0 + EDU_REG_IRQ_STATUS);
+	if (!status)
+		return IRQ_NONE;	/* not ours: an INTx line may be shared */
 
-	if (_IOC_TYPE(cmd) != IOC_MAGIC) {
-		pr_err("ioctl() command error!\n");
-		return -ENOTTY;
-	}
-
-	rv = access_ok((void __user *)arg, _IOC_SIZE(cmd));
-	if (!rv)
-		return -EFAULT;
-
-	switch (cmd) {
-	case IOC_DMA_TO_DEV:
-		rv = dma_to(irq_dev, (void *__user)arg, true);
-		break;
-	case IOC_DMA_TO_RAM:
-		rv = dma_to(irq_dev, (void *__user)arg, false);
-		break;
-	default:
-		pr_err("invalid ioctl() command!\n");
-		return -ENOTTY;
-	}
-
-	return rv;
-}
-
-static int dev_release(struct inode *inode, struct file *filp)
-{
-	pr_debug("%s() is invoked\n", __FUNCTION__);
-	return 0;
-}
-
-static struct file_operations fops = {
-	.owner   = THIS_MODULE,
-	.open    = dev_open,
-	.unlocked_ioctl = dev_ioctl,
-	.release = dev_release,
-};
-
-static int create_chrdev(struct irq_dev *irq_dev)
-{
-	int rv;
-
-	rv = alloc_chrdev_region(&irq_dev->devno, 0, 1, MODULE_NAME);
-	if (rv < 0) {
-		pr_err("cannot get major number!\n");
-		return rv;
-	}
-
-	cdev_init(&irq_dev->cdev, &fops);
-	irq_dev->cdev.owner = THIS_MODULE;
-
-	rv = cdev_add(&irq_dev->cdev, irq_dev->devno, 1);
-	if (rv) {
-		pr_debug("Error(%d): Adding %s error\n", rv, MODULE_NAME);
-		unregister_chrdev_region(irq_dev->devno, 1);
-		return rv;
-	}
-
-
-
-	return 0;
-}
-
-static void destroy_chrdev(struct irq_dev *irq_dev)
-{
-	cdev_del(&irq_dev->cdev);
-	unregister_chrdev_region(irq_dev->devno, 1);
-}
-
-static irqreturn_t irq_service(int irq, void *dev_id)
-{
-	pr_debug("irq triggered: irq = %d\n", irq);
-
+	iowrite32(status, dev->bar0 + EDU_REG_IRQ_ACK);
+	if (status & EDU_IRQ_DMA)
+		complete(&dev->dma_done);
 	return IRQ_HANDLED;
 }
 
-static void irq_free(struct irq_dev *irq_dev)
+/*
+ * /dev/dma is edu's 4 KB buffer: write() puts data there by DMA from our
+ * buffer, read() fetches it by DMA into our buffer, at the file position.
+ */
+static int dma_open(struct inode *inode, struct file *filp)
 {
-	int i;
-	for (i = 0; i < irq_dev->irq_nr; i++) {
-		if (irq_dev->irqs[i])
-			free_irq(irq_dev->irqs[i], irq_dev->irqs + i);
-	}
-	pci_free_irq_vectors(irq_dev->pcidev);
-}
+	struct dma_dev *dev = container_of(inode->i_cdev, struct dma_dev, cdev);
 
-static int irq_alloc(struct irq_dev *irq_dev)
-{
-	int i, irq, rv, nvec = PCI_KMOD_EDU_MAX_IRQ_VEC;
-
-	nvec = pci_alloc_irq_vectors(irq_dev->pcidev,
-				     1, nvec, PCI_IRQ_ALL_TYPES);
-	if (nvec < 0) {
-		pr_err("pci_alloc_irq_vectors failed!\n");
-		return nvec;
-	}
-	pr_debug("irq vec number = %d\n", nvec);
-	irq_dev->irq_nr = nvec;
-
-	for (i = 0; i < nvec; i++) {
-		irq = pci_irq_vector(irq_dev->pcidev, i);
-		rv = request_irq(irq, irq_service, 0, MODULE_NAME, irq_dev->irqs + i);
-		pr_debug("request_irq(%d) == %d\n", irq, rv);
-		if (rv < 0)
-			goto fail;
-		irq_dev->irqs[i] = irq;
-	}
-
-	return 0;
-fail:
-	irq_free(irq_dev);
-	return rv;
-}
-
-static void unmap_bars(struct irq_dev *irq_dev)
-{
-	int i;
-	for (i = 0; i < irq_dev->bar_nr; i++) {
-		pci_iounmap(irq_dev->pcidev, irq_dev->bar[i]);
-	}
-}
-
-static int map_single_bar(struct irq_dev *irq_dev, int idx)
-{
-	resource_size_t bar_start;
-	resource_size_t bar_len;
-	void *__iomem bar_addr;
-
-	bar_start = pci_resource_start(irq_dev->pcidev, idx);
-	bar_len = pci_resource_len(irq_dev->pcidev, idx);
-
-	if (bar_len == 0) {
-		return bar_len;
-	}
-
-	bar_addr = pci_iomap(irq_dev->pcidev, idx, bar_len);
-	if (!bar_addr)
-		return -ENOMEM;
-
-	pr_info("BAR%d at 0x%llx mapped at 0x%px, length=%llu(/%llx)\n", idx,
-		(u64)bar_start, bar_addr, (u64)bar_len, (u64)bar_len);
-
-	irq_dev->bar[irq_dev->bar_nr++] = bar_addr;
-
-	return (int)bar_len;
-}
-
-static int map_bars(struct irq_dev *irq_dev)
-{
-	int i, rv;
-	int bar_len;
-
-	for (i = 0; i < PCI_KMOD_EDU_BAR_NUM; i++) {
-		bar_len = map_single_bar(irq_dev, i);
-		if (bar_len == 0) {
-			continue;
-		} else if (bar_len < 0) {
-			rv = bar_len;
-			goto fail;
-		}
-	}
-
-	return 0;
-
-fail:
-	unmap_bars(irq_dev);
-	return rv;
-}
-
-static void exit_dma(struct irq_dev *irq_dev)
-{
-	if (irq_dev->dma_buf) {
-		dma_free_coherent(&irq_dev->pcidev->dev, DMA_SIZE,
-				  irq_dev->dma_buf, irq_dev->dma_addr);
-		irq_dev->dma_buf = NULL;
-	}
-}
-
-static int init_dma(struct irq_dev *irq_dev)
-{
-	irq_dev->dma_buf = dma_alloc_coherent(&irq_dev->pcidev->dev, DMA_SIZE,
-					      &irq_dev->dma_addr, GFP_KERNEL);
-	pr_debug("DMA_ADDR: = %px\n", (void*)(irq_dev->dma_buf));
-	if (!irq_dev->dma_buf) {
-		pr_err("dma_alloc_coherent() failed\n");
-		return -ENOMEM;
-	}
-	
+	get_device(&dev->dev);		/* the file keeps dev alive */
+	filp->private_data = dev;
 	return 0;
 }
 
-static int probe(struct pci_dev *dev, const struct pci_device_id *id)
+static int dma_release(struct inode *inode, struct file *filp)
 {
-	int rv;
-	u8 irq;
-	struct irq_dev *irq_dev;
+	struct dma_dev *dev = filp->private_data;
 
-	pr_debug("New pci device probing!\n");
-
-	if (pci_enable_device(dev)) {
-		dev_err(&dev->dev, "can't enable PCI device\n");
-		return -ENODEV;
-	}
-	pci_set_master(dev);
-
-	pci_read_config_byte(dev, PCI_INTERRUPT_LINE, &irq);
-	pr_debug("IRQ: %d\n", irq);
-	pci_read_config_byte(dev, PCI_INTERRUPT_PIN, &irq);
-	pr_debug("IRQ: %d\n", irq);
-
-	irq_dev = kzalloc(sizeof(struct irq_dev), GFP_KERNEL);
-	if (!irq_dev) {
-		pr_err("Allocate memory for 'struct irq_dev' failed!\n");
-		rv = -ENOMEM;
-		goto alloc_err;
-	}
-	irq_dev->pcidev = dev;
-	dev_set_drvdata(&dev->dev, irq_dev);
-
-	rv = pci_request_regions(dev, MODULE_NAME);
-	if (rv) {
-		dev_err(&dev->dev, "can't request regions\n");
-		goto request_regions_err;
-	}
-
-	rv = map_bars(irq_dev);
-	if (rv < 0) {
-		dev_err(&dev->dev, "can't map bars\n");
-		goto map_bars_err;
-	}
-
-	rv = dma_set_mask_and_coherent(&dev->dev, DMA_BIT_MASK(28));
-	if (rv) {
-		dev_err(&dev->dev, "can't set DMA mask\n");
-		goto dma_mask_err;
-	}
-
-	rv = irq_alloc(irq_dev);
-	if (rv < 0) {
-		dev_err(&dev->dev, "can't alloc irq\n");
-		goto irq_err;
-	}
-
-	rv = init_dma(irq_dev);
-	if (rv < 0) {
-		dev_err(&dev->dev, "cannot setup dma\n");
-		goto dma_err;
-	}
-
-	rv = create_chrdev(irq_dev);
-	if (rv < 0) {
-		dev_err(&dev->dev, "can't create char dev\n");
-		goto create_chrdev_err;
-	}
-
+	put_device(&dev->dev);
 	return 0;
-
-create_chrdev_err:
-	exit_dma(irq_dev);
-dma_err:
-	irq_free(irq_dev);
-irq_err:
-dma_mask_err:
-	unmap_bars(irq_dev);
-map_bars_err:
-	pci_release_regions(dev);
-request_regions_err:
-	dev_set_drvdata(&dev->dev, NULL);
-	kfree(irq_dev);
-alloc_err:
-	pci_disable_device(dev);
-	return rv;
 }
 
-static void remove(struct pci_dev *dev)
+static ssize_t dma_read(struct file *filp, char __user *ubuf, size_t count,
+			loff_t *ppos)
 {
-	struct irq_dev *irq_dev;
-	irq_dev = dev_get_drvdata(&dev->dev);
+	struct dma_dev *dev = filp->private_data;
+	ssize_t ret;
 
-	destroy_chrdev(irq_dev);
-	exit_dma(irq_dev);
-	irq_free(irq_dev);
-	unmap_bars(irq_dev);
-	pci_release_regions(dev);
-	dev_set_drvdata(&dev->dev, NULL);
-	kfree(irq_dev);
-	pci_disable_device(dev);
+	if (*ppos >= EDU_BUF_SIZE)
+		return 0;
+	count = min_t(size_t, count, EDU_BUF_SIZE - *ppos);
+
+	if (mutex_lock_interruptible(&dev->lock))
+		return -ERESTARTSYS;
+	if (dev->removed) {
+		ret = -ENODEV;
+		goto out;
+	}
+
+	ret = edu_dma(dev, EDU_BUF_ADDR + *ppos, true, count);
+	if (ret)
+		goto out;
+	if (copy_to_user(ubuf, dev->buf, count)) {
+		ret = -EFAULT;
+		goto out;
+	}
+
+	*ppos += count;
+	ret = count;
+out:
+	mutex_unlock(&dev->lock);
+	return ret;
 }
 
-static struct pci_driver pci_driver = {
-	.name		= MODULE_NAME,
-	.id_table	= ids,
-	.probe		= probe,
-	.remove		= remove,
+static ssize_t dma_write(struct file *filp, const char __user *ubuf,
+			 size_t count, loff_t *ppos)
+{
+	struct dma_dev *dev = filp->private_data;
+	ssize_t ret;
+
+	if (*ppos >= EDU_BUF_SIZE)
+		return -ENOSPC;
+	count = min_t(size_t, count, EDU_BUF_SIZE - *ppos);
+
+	if (mutex_lock_interruptible(&dev->lock))
+		return -ERESTARTSYS;
+	if (dev->removed) {
+		ret = -ENODEV;
+		goto out;
+	}
+
+	if (copy_from_user(dev->buf, ubuf, count)) {
+		ret = -EFAULT;
+		goto out;
+	}
+	ret = edu_dma(dev, EDU_BUF_ADDR + *ppos, false, count);
+	if (ret)
+		goto out;
+
+	*ppos += count;
+	ret = count;
+out:
+	mutex_unlock(&dev->lock);
+	return ret;
+}
+
+static loff_t dma_llseek(struct file *filp, loff_t off, int whence)
+{
+	return fixed_size_llseek(filp, off, whence, EDU_BUF_SIZE);
+}
+
+static const struct file_operations dma_fops = {
+	.owner   = THIS_MODULE,
+	.open    = dma_open,
+	.release = dma_release,
+	.read    = dma_read,
+	.write   = dma_write,
+	.llseek  = dma_llseek,
 };
 
-static
-int __init m_init(void)
+/*
+ * dev->dev is the device behind /dev/dma. cdev_device_add() makes the cdev
+ * hold a reference to it, and every open file holds one too, so this runs
+ * only when the device is removed and the last file is closed.
+ */
+static void dma_dev_release(struct device *d)
 {
-	return pci_register_driver(&pci_driver);
+	kfree(container_of(d, struct dma_dev, dev));
 }
 
-static
-void __exit m_exit(void)
+/*
+ * pcim_enable_device(), pcim_iomap_region(), dmam_alloc_coherent() and
+ * devm_request_irq() are the managed versions of the calls below, undone
+ * automatically when probe() fails or after remove().
+ */
+static int dma_dev_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 {
-	pci_unregister_driver(&pci_driver);
+	unsigned int types = msi ? PCI_IRQ_MSI : PCI_IRQ_INTX;
+	struct dma_dev *dev;
+	unsigned long flags;
+	int err, nvec;
+
+	dev = kzalloc_obj(*dev);
+	if (!dev)
+		return -ENOMEM;
+	dev->pdev = pdev;
+	mutex_init(&dev->lock);
+	init_completion(&dev->dma_done);
+	device_initialize(&dev->dev);	/* from here on, put_device() frees */
+	dev->dev.release = dma_dev_release;
+
+	err = pci_enable_device(pdev);
+	if (err)
+		goto err_put;
+
+	err = pci_request_regions(pdev, MODULE_NAME);
+	if (err)
+		goto err_disable;
+
+	dev->bar0 = pci_iomap(pdev, 0, 0);
+	if (!dev->bar0) {
+		err = -ENOMEM;
+		goto err_regions;
+	}
+
+	/* DMA, and MSI, are memory accesses by the device */
+	pci_set_master(pdev);
+
+	/*
+	 * Tell the DMA API which addresses the device can reach, so that it
+	 * hands out only those, using a bounce buffer or an IOMMU if needed.
+	 */
+	err = dma_set_mask_and_coherent(&pdev->dev,
+					DMA_BIT_MASK(EDU_DMA_BITS));
+	if (err)
+		goto err_unmap;
+
+	/*
+	 * Coherent memory: the CPU and the device see each other's writes
+	 * without any syncing, for buffers used again and again. For data
+	 * that is in a buffer of its own, streaming DMA maps it per transfer
+	 * instead: dma_map_single(), then dma_unmap_single() when done.
+	 */
+	dev->buf = dma_alloc_coherent(&pdev->dev, EDU_BUF_SIZE, &dev->buf_bus,
+				      GFP_KERNEL);
+	if (!dev->buf) {
+		err = -ENOMEM;
+		goto err_unmap;
+	}
+
+	nvec = pci_alloc_irq_vectors(pdev, 1, 1, types);
+	if (nvec < 0) {
+		err = nvec;
+		goto err_dma;
+	}
+	dev->irq = pci_irq_vector(pdev, 0);
+
+	/* pci_request_irq() would choose IRQF_SHARED by itself */
+	flags = pci_dev_msi_enabled(pdev) ? 0 : IRQF_SHARED;
+	err = request_irq(dev->irq, dma_dev_handler, flags, MODULE_NAME, dev);
+	if (err)
+		goto err_vectors;
+
+	/* /dev/dma: devtmpfs creates the node for a device with a devt */
+	dev->dev.parent = &pdev->dev;
+	dev->dev.devt = devno;
+	err = dev_set_name(&dev->dev, MODULE_NAME);
+	if (err)
+		goto err_irq;
+	cdev_init(&dev->cdev, &dma_fops);
+	dev->cdev.owner = THIS_MODULE;
+	err = cdev_device_add(&dev->cdev, &dev->dev);
+	if (err)
+		goto err_irq;
+
+	pci_set_drvdata(pdev, dev);
+	dev_info(&pdev->dev, "using %s, buffer at bus address %pad\n",
+		 pci_dev_msi_enabled(pdev) ? "MSI" : "INTx", &dev->buf_bus);
+	return 0;
+
+err_irq:
+	free_irq(dev->irq, dev);
+err_vectors:
+	pci_free_irq_vectors(pdev);
+err_dma:
+	dma_free_coherent(&pdev->dev, EDU_BUF_SIZE, dev->buf, dev->buf_bus);
+err_unmap:
+	pci_clear_master(pdev);
+	pci_iounmap(pdev, dev->bar0);
+err_regions:
+	pci_release_regions(pdev);
+err_disable:
+	pci_disable_device(pdev);
+err_put:
+	put_device(&dev->dev);
+	return err;
 }
 
+/*
+ * Files may still be open. Remove the node, mark the device gone so that
+ * their reads and writes fail, and release the hardware. The structure
+ * itself goes when the last file is closed.
+ */
+static void dma_dev_remove(struct pci_dev *pdev)
+{
+	struct dma_dev *dev = pci_get_drvdata(pdev);
+
+	cdev_device_del(&dev->cdev, &dev->dev);
+
+	mutex_lock(&dev->lock);		/* waits for a transfer in progress */
+	dev->removed = true;
+	mutex_unlock(&dev->lock);
+
+	free_irq(dev->irq, dev);
+	pci_free_irq_vectors(pdev);
+	dma_free_coherent(&pdev->dev, EDU_BUF_SIZE, dev->buf, dev->buf_bus);
+	pci_clear_master(pdev);
+	pci_iounmap(pdev, dev->bar0);
+	pci_release_regions(pdev);
+	pci_disable_device(pdev);
+	put_device(&dev->dev);
+}
+
+static struct pci_driver dma_dev_driver = {
+	.name     = MODULE_NAME,
+	.id_table = dma_dev_ids,
+	.probe    = dma_dev_probe,
+	.remove   = dma_dev_remove,
+};
+
+static int __init m_init(void)
+{
+	int err;
+
+	err = alloc_chrdev_region(&devno, 0, 1, MODULE_NAME);
+	if (err)
+		return err;
+
+	err = pci_register_driver(&dma_dev_driver);
+	if (err)
+		unregister_chrdev_region(devno, 1);
+	return err;
+}
+
+static void __exit m_exit(void)
+{
+	pci_unregister_driver(&dma_dev_driver);
+	unregister_chrdev_region(devno, 1);
+}
 
 module_init(m_init);
 module_exit(m_exit);
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("d0u9");
-MODULE_DESCRIPTION("PCI Driver skel");
+MODULE_DESCRIPTION("DMA to and from QEMU's edu device");
