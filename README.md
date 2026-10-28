@@ -17,9 +17,10 @@ workspace and install the helper scripts.
 Current test baseline:
 
 - Kernel: Linux 7.2.x.
+- QEMU: 11.1.x, with the devices from [`tools/qemu`](tools/qemu/README.md).
 - Host system: Fedora release 44 (Forty Four).
 
-Other kernel versions and host distributions are not tested.
+Other kernel and QEMU versions and host distributions are not tested.
 
 The examples target 64-bit kernels (x86_64). Differences on 32-bit kernels,
 such as 64-bit MMIO accessors that are missing or split in two, are not
