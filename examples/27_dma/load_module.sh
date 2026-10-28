@@ -1,5 +1,5 @@
 #!/bin/sh
-# Extra arguments go to insmod, e.g. "sh load_module.sh load msi=0".
+# Extra arguments go to insmod, e.g. "sh load_module.sh load xor=0x20".
 # The node /dev/dma is created by devtmpfs.
 module="dma"
 

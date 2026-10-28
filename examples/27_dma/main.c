@@ -2,6 +2,7 @@
 #include <linux/module.h>
 #include <linux/init.h>
 #include <linux/kernel.h>
+#include <linux/bitfield.h>
 #include <linux/cdev.h>
 #include <linux/completion.h>
 #include <linux/dma-mapping.h>
@@ -14,107 +15,161 @@
 
 #include "main.h"
 
-static bool msi = true;
-module_param(msi, bool, 0444);
-MODULE_PARM_DESC(msi, "use MSI (default), or the INTx line if 0");
+static unsigned int xor;
+module_param(xor, uint, 0644);
+MODULE_PARM_DESC(xor, "byte the device XORs into data it sends to RAM (default 0)");
 
 static dev_t devno;
 
-static const struct pci_device_id dma_dev_ids[] = {
-	{ PCI_DEVICE(EDU_VENDOR_ID, EDU_DEVICE_ID) },
+static const struct pci_device_id dma_ids[] = {
+	{ PCI_DEVICE(LDD_PCIE_VENDOR_ID, LDD_PCIE_DEVICE_ID) },
 	{ }
 };
-MODULE_DEVICE_TABLE(pci, dma_dev_ids);
+MODULE_DEVICE_TABLE(pci, dma_ids);
 
 /*
- * Copy @len bytes between our buffer and edu's buffer at @edu_addr, and
- * wait until edu is done. Called with dev->lock held.
+ * Move @len bytes between our buffer and the on-board memory at @pos, and
+ * wait until the device is done. Called with dma->lock held.
  *
- * The device is given bus addresses (dma_addr_t), never kernel pointers.
- * writeq() stores the values little-endian, as PCI registers are, so no
- * cpu_to_le64() is needed. edu runs the transfer about 100 ms later and
- * then interrupts with EDU_IRQ_DMA in its status.
+ * The buffer is streaming DMA: dma_map_single() hands it to the device for
+ * this one transfer, in direction @dir, and gives its bus address;
+ * dma_unmap_single() hands it back. In between the CPU must not touch it.
+ * On the way the DMA API does what the platform needs: cache flushes, an
+ * IOMMU mapping, or a copy through a bounce buffer the device can reach.
  */
-static int edu_dma(struct dma_dev *dev, u64 edu_addr, bool to_ram, size_t len)
+static int dma_xfer(struct dma_dev *dma, loff_t pos, size_t len,
+		    enum dma_data_direction dir)
 {
-	u64 cmd = EDU_DMA_START | EDU_DMA_IRQ;
+	struct device *d = &dma->pdev->dev;
+	u32 ctrl = LDD_DMA_CTRL_START;
+	dma_addr_t bus;
+	int err = 0;
 
-	reinit_completion(&dev->dma_done);
+	bus = dma_map_single(d, dma->buf, len, dir);
+	if (dma_mapping_error(d, bus))
+		return -ENOMEM;
 
-	if (to_ram) {
-		writeq(edu_addr, dev->bar0 + EDU_REG_DMA_SRC);
-		writeq(dev->buf_bus, dev->bar0 + EDU_REG_DMA_DST);
-		cmd |= EDU_DMA_TO_RAM;
-	} else {
-		writeq(dev->buf_bus, dev->bar0 + EDU_REG_DMA_SRC);
-		writeq(edu_addr, dev->bar0 + EDU_REG_DMA_DST);
+	/*
+	 * Without an IOMMU the bus address is the physical one; with one,
+	 * it is whatever the IOMMU was told to translate. virt_to_phys() is
+	 * only for printing: the device is given what the DMA API returned.
+	 */
+	dev_info_once(d, "buffer at phys %pa is at bus %pad\n",
+		      &(phys_addr_t){ virt_to_phys(dma->buf) }, &bus);
+
+	/*
+	 * The descriptor table is coherent memory: what the CPU writes is
+	 * seen by the device without syncing. iowrite32() orders these
+	 * stores before the register writes that start the transfer.
+	 */
+	dma->desc[0].addr = cpu_to_le64(bus);
+	dma->desc[0].len = cpu_to_le32(len);
+	dma->desc[0].flags = 0;
+
+	/* the registers take 32-bit accesses only: the address in halves */
+	iowrite32(lower_32_bits(dma->desc_bus),
+		  dma->regs + LDD_REG_DESC_ADDR_LO);
+	iowrite32(upper_32_bits(dma->desc_bus),
+		  dma->regs + LDD_REG_DESC_ADDR_HI);
+	iowrite32(1, dma->regs + LDD_REG_DESC_COUNT);
+	iowrite32(pos, dma->regs + LDD_REG_DEV_OFFSET);
+	if (dir == DMA_FROM_DEVICE) {
+		ctrl |= LDD_DMA_CTRL_TO_RAM;
+		iowrite32(READ_ONCE(xor) & 0xff, dma->regs + LDD_REG_XOR);
 	}
-	writeq(len, dev->bar0 + EDU_REG_DMA_COUNT);
-	writeq(cmd, dev->bar0 + EDU_REG_DMA_CMD);
 
-	if (!wait_for_completion_timeout(&dev->dma_done,
-					 msecs_to_jiffies(1000)))
-		return -ETIMEDOUT;
-	return 0;
+	reinit_completion(&dma->dma_done);
+	iowrite32(ctrl, dma->regs + LDD_REG_DMA_CTRL);
+
+	if (!wait_for_completion_timeout(&dma->dma_done,
+					 msecs_to_jiffies(1000))) {
+		/*
+		 * The device may still be reading or writing the buffer, so
+		 * it must not be unmapped yet: reset the device, which
+		 * abandons the transfer without an interrupt. A reset also
+		 * masks every interrupt; unmask them again, and wait for a
+		 * handler that may be running late.
+		 */
+		dev_err(d, "DMA timed out, resetting the device\n");
+		iowrite32(LDD_CTRL_RESET, dma->regs + LDD_REG_CTRL);
+		synchronize_irq(dma->irq);
+		iowrite32(LDD_INT_DMA_DONE | LDD_INT_DMA_ERROR,
+			  dma->regs + LDD_REG_INT_MASK);
+		err = -ETIMEDOUT;
+	} else if (READ_ONCE(dma->int_status) & LDD_INT_DMA_ERROR) {
+		u32 status = ioread32(dma->regs + LDD_REG_STATUS);
+
+		dev_err(d, "DMA failed, error code %lu\n",
+			FIELD_GET(LDD_STATUS_ERR_CODE, status));
+		err = -EIO;
+	}
+
+	dma_unmap_single(d, bus, len, dir);
+	return err;
 }
 
-static irqreturn_t dma_dev_handler(int irq, void *dev_id)
+static irqreturn_t dma_handler(int irq, void *dev_id)
 {
-	struct dma_dev *dev = dev_id;
+	struct dma_dev *dma = dev_id;
 	u32 status;
 
-	status = ioread32(dev->bar0 + EDU_REG_IRQ_STATUS);
+	status = ioread32(dma->regs + LDD_REG_INT_STATUS) &
+		 (LDD_INT_DMA_DONE | LDD_INT_DMA_ERROR);
 	if (!status)
 		return IRQ_NONE;	/* not ours: an INTx line may be shared */
 
-	iowrite32(status, dev->bar0 + EDU_REG_IRQ_ACK);
-	if (status & EDU_IRQ_DMA)
-		complete(&dev->dma_done);
+	iowrite32(status, dma->regs + LDD_REG_INT_STATUS);
+	WRITE_ONCE(dma->int_status, status);
+	complete(&dma->dma_done);
 	return IRQ_HANDLED;
 }
 
 /*
- * /dev/dma is edu's 4 KB buffer: write() puts data there by DMA from our
- * buffer, read() fetches it by DMA into our buffer, at the file position.
+ * /dev/dma is the device's 1 MiB of on-board memory: write() puts data
+ * there by DMA, read() fetches it by DMA, at the file position. A call
+ * moves at most one buffer, dma->chunk bytes, and returns how much.
  */
 static int dma_open(struct inode *inode, struct file *filp)
 {
-	struct dma_dev *dev = container_of(inode->i_cdev, struct dma_dev, cdev);
+	struct dma_dev *dma = container_of(inode->i_cdev, struct dma_dev, cdev);
 
-	get_device(&dev->dev);		/* the file keeps dev alive */
-	filp->private_data = dev;
+	get_device(&dma->dev);		/* the file keeps dma alive */
+	filp->private_data = dma;
 	return 0;
 }
 
 static int dma_release(struct inode *inode, struct file *filp)
 {
-	struct dma_dev *dev = filp->private_data;
+	struct dma_dev *dma = filp->private_data;
 
-	put_device(&dev->dev);
+	put_device(&dma->dev);
 	return 0;
 }
 
 static ssize_t dma_read(struct file *filp, char __user *ubuf, size_t count,
 			loff_t *ppos)
 {
-	struct dma_dev *dev = filp->private_data;
+	struct dma_dev *dma = filp->private_data;
 	ssize_t ret;
 
-	if (*ppos >= EDU_BUF_SIZE)
+	if (*ppos >= LDD_MEM_SIZE)
 		return 0;
-	count = min_t(size_t, count, EDU_BUF_SIZE - *ppos);
+	count = min3(count, (size_t)(LDD_MEM_SIZE - *ppos), dma->chunk);
+	if (!count)
+		return 0;
 
-	if (mutex_lock_interruptible(&dev->lock))
+	if (mutex_lock_interruptible(&dma->lock))
 		return -ERESTARTSYS;
-	if (dev->removed) {
+	if (dma->removed) {
 		ret = -ENODEV;
 		goto out;
 	}
 
-	ret = edu_dma(dev, EDU_BUF_ADDR + *ppos, true, count);
+	ret = dma_xfer(dma, *ppos, count, DMA_FROM_DEVICE);
 	if (ret)
 		goto out;
-	if (copy_to_user(ubuf, dev->buf, count)) {
+	/* unmapped: the buffer is the CPU's again */
+	if (copy_to_user(ubuf, dma->buf, count)) {
 		ret = -EFAULT;
 		goto out;
 	}
@@ -122,45 +177,48 @@ static ssize_t dma_read(struct file *filp, char __user *ubuf, size_t count,
 	*ppos += count;
 	ret = count;
 out:
-	mutex_unlock(&dev->lock);
+	mutex_unlock(&dma->lock);
 	return ret;
 }
 
 static ssize_t dma_write(struct file *filp, const char __user *ubuf,
 			 size_t count, loff_t *ppos)
 {
-	struct dma_dev *dev = filp->private_data;
+	struct dma_dev *dma = filp->private_data;
 	ssize_t ret;
 
-	if (*ppos >= EDU_BUF_SIZE)
+	if (*ppos >= LDD_MEM_SIZE)
 		return -ENOSPC;
-	count = min_t(size_t, count, EDU_BUF_SIZE - *ppos);
+	count = min3(count, (size_t)(LDD_MEM_SIZE - *ppos), dma->chunk);
+	if (!count)
+		return 0;
 
-	if (mutex_lock_interruptible(&dev->lock))
+	if (mutex_lock_interruptible(&dma->lock))
 		return -ERESTARTSYS;
-	if (dev->removed) {
+	if (dma->removed) {
 		ret = -ENODEV;
 		goto out;
 	}
 
-	if (copy_from_user(dev->buf, ubuf, count)) {
+	/* fill the buffer before it is mapped and becomes the device's */
+	if (copy_from_user(dma->buf, ubuf, count)) {
 		ret = -EFAULT;
 		goto out;
 	}
-	ret = edu_dma(dev, EDU_BUF_ADDR + *ppos, false, count);
+	ret = dma_xfer(dma, *ppos, count, DMA_TO_DEVICE);
 	if (ret)
 		goto out;
 
 	*ppos += count;
 	ret = count;
 out:
-	mutex_unlock(&dev->lock);
+	mutex_unlock(&dma->lock);
 	return ret;
 }
 
 static loff_t dma_llseek(struct file *filp, loff_t off, int whence)
 {
-	return fixed_size_llseek(filp, off, whence, EDU_BUF_SIZE);
+	return fixed_size_llseek(filp, off, whence, LDD_MEM_SIZE);
 }
 
 static const struct file_operations dma_fops = {
@@ -173,7 +231,7 @@ static const struct file_operations dma_fops = {
 };
 
 /*
- * dev->dev is the device behind /dev/dma. cdev_device_add() makes the cdev
+ * dma->dev is the device behind /dev/dma. cdev_device_add() makes the cdev
  * hold a reference to it, and every open file holds one too, so this runs
  * only when the device is removed and the last file is closed.
  */
@@ -183,25 +241,25 @@ static void dma_dev_release(struct device *d)
 }
 
 /*
- * pcim_enable_device(), pcim_iomap_region(), dmam_alloc_coherent() and
- * devm_request_irq() are the managed versions of the calls below, undone
- * automatically when probe() fails or after remove().
+ * pcim_enable_device(), pcim_iomap_region(), dmam_alloc_coherent(),
+ * devm_kmalloc() and devm_request_irq() are the managed versions of the
+ * calls below, undone automatically when probe() fails or after remove().
  */
-static int dma_dev_probe(struct pci_dev *pdev, const struct pci_device_id *id)
+static int dma_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 {
-	unsigned int types = msi ? PCI_IRQ_MSI : PCI_IRQ_INTX;
-	struct dma_dev *dev;
+	struct dma_dev *dma;
 	unsigned long flags;
 	int err, nvec;
+	u32 caps;
 
-	dev = kzalloc_obj(*dev);
-	if (!dev)
+	dma = kzalloc_obj(*dma);
+	if (!dma)
 		return -ENOMEM;
-	dev->pdev = pdev;
-	mutex_init(&dev->lock);
-	init_completion(&dev->dma_done);
-	device_initialize(&dev->dev);	/* from here on, put_device() frees */
-	dev->dev.release = dma_dev_release;
+	dma->pdev = pdev;
+	mutex_init(&dma->lock);
+	init_completion(&dma->dma_done);
+	device_initialize(&dma->dev);	/* from here on, put_device() frees */
+	dma->dev.release = dma_dev_release;
 
 	err = pci_enable_device(pdev);
 	if (err)
@@ -211,10 +269,14 @@ static int dma_dev_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	if (err)
 		goto err_disable;
 
-	dev->bar0 = pci_iomap(pdev, 0, 0);
-	if (!dev->bar0) {
+	dma->regs = pci_iomap(pdev, 0, 0);
+	if (!dma->regs) {
 		err = -ENOMEM;
 		goto err_regions;
+	}
+	if (ioread32(dma->regs + LDD_REG_ID) != LDD_ID) {
+		err = -ENODEV;
+		goto err_unmap;
 	}
 
 	/* DMA, and MSI, are memory accesses by the device */
@@ -223,70 +285,98 @@ static int dma_dev_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	/*
 	 * Tell the DMA API which addresses the device can reach, so that it
 	 * hands out only those, using a bounce buffer or an IOMMU if needed.
+	 * ldd-pcie says in CAPS whether it drives all 64 bits.
 	 */
-	err = dma_set_mask_and_coherent(&pdev->dev,
-					DMA_BIT_MASK(EDU_DMA_BITS));
+	caps = ioread32(dma->regs + LDD_REG_CAPS);
+	err = dma_set_mask_and_coherent(&pdev->dev, caps & LDD_CAPS_DMA64 ?
+					DMA_BIT_MASK(64) : DMA_BIT_MASK(32));
 	if (err)
-		goto err_unmap;
+		goto err_master;
 
 	/*
-	 * Coherent memory: the CPU and the device see each other's writes
-	 * without any syncing, for buffers used again and again. For data
-	 * that is in a buffer of its own, streaming DMA maps it per transfer
-	 * instead: dma_map_single(), then dma_unmap_single() when done.
+	 * Coherent memory for the descriptor table: allocated once, written
+	 * by the CPU and read by the device again and again, with no syncing.
 	 */
-	dev->buf = dma_alloc_coherent(&pdev->dev, EDU_BUF_SIZE, &dev->buf_bus,
-				      GFP_KERNEL);
-	if (!dev->buf) {
+	dma->desc = dma_alloc_coherent(&pdev->dev, sizeof(*dma->desc),
+				       &dma->desc_bus, GFP_KERNEL);
+	if (!dma->desc) {
 		err = -ENOMEM;
-		goto err_unmap;
+		goto err_master;
 	}
 
-	nvec = pci_alloc_irq_vectors(pdev, 1, 1, types);
+	/*
+	 * Ordinary memory for the data, mapped per transfer. kmalloc()
+	 * memory is physically contiguous, as one descriptor needs; vmalloc()
+	 * memory is not, and could not be mapped as one piece.
+	 */
+	dma->chunk = min_t(size_t, DMA_CHUNK,
+			   ioread32(dma->regs + LDD_REG_MAX_SEG));
+	dma->buf = kmalloc(dma->chunk, GFP_KERNEL);
+	if (!dma->buf) {
+		err = -ENOMEM;
+		goto err_coherent;
+	}
+
+	/*
+	 * One vector, MSI or INTx. Not MSI-X: there DMA_ERROR has a vector of
+	 * its own, vector 1, and with one vector its interrupt would be lost.
+	 */
+	nvec = pci_alloc_irq_vectors(pdev, 1, 1, PCI_IRQ_MSI | PCI_IRQ_INTX);
 	if (nvec < 0) {
 		err = nvec;
-		goto err_dma;
+		goto err_buf;
 	}
-	dev->irq = pci_irq_vector(pdev, 0);
+	dma->irq = pci_irq_vector(pdev, 0);
 
 	/* pci_request_irq() would choose IRQF_SHARED by itself */
 	flags = pci_dev_msi_enabled(pdev) ? 0 : IRQF_SHARED;
-	err = request_irq(dev->irq, dma_dev_handler, flags, MODULE_NAME, dev);
+	err = request_irq(dma->irq, dma_handler, flags, MODULE_NAME, dma);
 	if (err)
 		goto err_vectors;
 
+	iowrite32(LDD_INT_DMA_DONE | LDD_INT_DMA_ERROR,
+		  dma->regs + LDD_REG_INT_STATUS);
+	iowrite32(LDD_INT_DMA_DONE | LDD_INT_DMA_ERROR,
+		  dma->regs + LDD_REG_INT_MASK);
+
 	/* /dev/dma: devtmpfs creates the node for a device with a devt */
-	dev->dev.parent = &pdev->dev;
-	dev->dev.devt = devno;
-	err = dev_set_name(&dev->dev, MODULE_NAME);
+	dma->dev.parent = &pdev->dev;
+	dma->dev.devt = devno;
+	err = dev_set_name(&dma->dev, MODULE_NAME);
 	if (err)
 		goto err_irq;
-	cdev_init(&dev->cdev, &dma_fops);
-	dev->cdev.owner = THIS_MODULE;
-	err = cdev_device_add(&dev->cdev, &dev->dev);
+	cdev_init(&dma->cdev, &dma_fops);
+	dma->cdev.owner = THIS_MODULE;
+	err = cdev_device_add(&dma->cdev, &dma->dev);
 	if (err)
 		goto err_irq;
 
-	pci_set_drvdata(pdev, dev);
-	dev_info(&pdev->dev, "using %s, buffer at bus address %pad\n",
-		 pci_dev_msi_enabled(pdev) ? "MSI" : "INTx", &dev->buf_bus);
+	pci_set_drvdata(pdev, dma);
+	dev_info(&pdev->dev, "using %s, %s DMA, descriptors at bus %pad\n",
+		 pci_dev_msi_enabled(pdev) ? "MSI" : "INTx",
+		 caps & LDD_CAPS_DMA64 ? "64-bit" : "32-bit", &dma->desc_bus);
 	return 0;
 
 err_irq:
-	free_irq(dev->irq, dev);
+	iowrite32(0, dma->regs + LDD_REG_INT_MASK);
+	free_irq(dma->irq, dma);
 err_vectors:
 	pci_free_irq_vectors(pdev);
-err_dma:
-	dma_free_coherent(&pdev->dev, EDU_BUF_SIZE, dev->buf, dev->buf_bus);
-err_unmap:
+err_buf:
+	kfree(dma->buf);
+err_coherent:
+	dma_free_coherent(&pdev->dev, sizeof(*dma->desc), dma->desc,
+			  dma->desc_bus);
+err_master:
 	pci_clear_master(pdev);
-	pci_iounmap(pdev, dev->bar0);
+err_unmap:
+	pci_iounmap(pdev, dma->regs);
 err_regions:
 	pci_release_regions(pdev);
 err_disable:
 	pci_disable_device(pdev);
 err_put:
-	put_device(&dev->dev);
+	put_device(&dma->dev);
 	return err;
 }
 
@@ -295,31 +385,34 @@ err_put:
  * their reads and writes fail, and release the hardware. The structure
  * itself goes when the last file is closed.
  */
-static void dma_dev_remove(struct pci_dev *pdev)
+static void dma_remove(struct pci_dev *pdev)
 {
-	struct dma_dev *dev = pci_get_drvdata(pdev);
+	struct dma_dev *dma = pci_get_drvdata(pdev);
 
-	cdev_device_del(&dev->cdev, &dev->dev);
+	cdev_device_del(&dma->cdev, &dma->dev);
 
-	mutex_lock(&dev->lock);		/* waits for a transfer in progress */
-	dev->removed = true;
-	mutex_unlock(&dev->lock);
+	mutex_lock(&dma->lock);		/* waits for a transfer in progress */
+	dma->removed = true;
+	mutex_unlock(&dma->lock);
 
-	free_irq(dev->irq, dev);
+	iowrite32(0, dma->regs + LDD_REG_INT_MASK);
+	free_irq(dma->irq, dma);
 	pci_free_irq_vectors(pdev);
-	dma_free_coherent(&pdev->dev, EDU_BUF_SIZE, dev->buf, dev->buf_bus);
+	kfree(dma->buf);
+	dma_free_coherent(&pdev->dev, sizeof(*dma->desc), dma->desc,
+			  dma->desc_bus);
 	pci_clear_master(pdev);
-	pci_iounmap(pdev, dev->bar0);
+	pci_iounmap(pdev, dma->regs);
 	pci_release_regions(pdev);
 	pci_disable_device(pdev);
-	put_device(&dev->dev);
+	put_device(&dma->dev);
 }
 
-static struct pci_driver dma_dev_driver = {
+static struct pci_driver dma_driver = {
 	.name     = MODULE_NAME,
-	.id_table = dma_dev_ids,
-	.probe    = dma_dev_probe,
-	.remove   = dma_dev_remove,
+	.id_table = dma_ids,
+	.probe    = dma_probe,
+	.remove   = dma_remove,
 };
 
 static int __init m_init(void)
@@ -330,7 +423,7 @@ static int __init m_init(void)
 	if (err)
 		return err;
 
-	err = pci_register_driver(&dma_dev_driver);
+	err = pci_register_driver(&dma_driver);
 	if (err)
 		unregister_chrdev_region(devno, 1);
 	return err;
@@ -338,7 +431,7 @@ static int __init m_init(void)
 
 static void __exit m_exit(void)
 {
-	pci_unregister_driver(&dma_dev_driver);
+	pci_unregister_driver(&dma_driver);
 	unregister_chrdev_region(devno, 1);
 }
 
@@ -347,4 +440,4 @@ module_exit(m_exit);
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("d0u9");
-MODULE_DESCRIPTION("DMA to and from QEMU's edu device");
+MODULE_DESCRIPTION("Single-segment DMA with the ldd-pcie device");
