@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/sh
 set -eu
 
 usage() {
@@ -20,7 +20,7 @@ else
     QEMU_SRC="$LDD_ROOT/src/qemu"
 fi
 
-DEVICES_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)/hw/ldd"
+DEVICES_DIR="$(cd -- "$(dirname -- "$0")" && pwd -P)/hw/ldd"
 MESON="$QEMU_SRC/hw/meson.build"
 KCONFIG="$QEMU_SRC/hw/Kconfig"
 LINK="$QEMU_SRC/hw/ldd"
@@ -50,7 +50,6 @@ add_line() {
 
 remove_line() {
     grep -qxF -- "$2" "$1" || return 0
-    local kept
     kept="$(grep -vxF -- "$2" "$1" || true)"
     printf '%s\n' "$kept" > "$1"
 }
