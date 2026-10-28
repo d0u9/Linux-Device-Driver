@@ -2,8 +2,6 @@
 
 Examples of Linux device drivers, currently targeting Linux 7.2.x.
 
-# NOTE: Apologies for the delay in maintaining this project, sincerely.
-
 # Repository layout
 
 - [`docs/`](docs/README.md): tutorial chapters, in reading order.
