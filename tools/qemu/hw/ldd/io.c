@@ -521,6 +521,7 @@ static void ldd_io_class_initfn(ObjectClass *kclass, const void *data)
     dc->realize = ldd_io_realize;
     dc->unrealize = ldd_io_unrealize;
     dc->vmsd = &vmstate_ldd_io;
+    dc->desc = "an io device for driver examples";
     rc->phases.enter = ldd_io_reset_enter;
     rc->phases.exit = ldd_io_reset_exit;
     device_class_set_props(dc, ldd_io_properties);

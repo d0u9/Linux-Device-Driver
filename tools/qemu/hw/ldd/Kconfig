@@ -7,3 +7,8 @@ config LDD_USB
     bool
     default y
     depends on USB
+
+config LDD_PCIE
+    bool
+    default y
+    depends on PCI_EXPRESS
