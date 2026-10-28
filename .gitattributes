@@ -1,0 +1,3 @@
+# GitHub counts examples/ as documentation and leaves it out of the
+# language statistics; the drivers there are the code of this repository.
+examples/** linguist-documentation=false
