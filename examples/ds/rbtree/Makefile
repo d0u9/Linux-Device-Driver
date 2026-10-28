@@ -4,5 +4,5 @@ ifneq ($(KERNELRELEASE),)
     rbtree-objs := main.o
     obj-m := rbtree.o
 else
-    include ../common.mk
+    include ../../common.mk
 endif

@@ -2,6 +2,7 @@
 #
 #   make [-j N] [KDIR=...]       build all finished examples
 #   make 07_ioctl 22_lddbus      build the named examples and their subdirectories
+#   make ds                      build every example under ds/
 #   make clean
 #
 # Each directory prints PASS or FAIL; a failing build also prints its log.
@@ -11,10 +12,12 @@ EXAMPLES := $(patsubst %/Makefile,%,$(wildcard */Makefile))
 SUBDIRS := $(patsubst %/Makefile,%,$(wildcard */*/Makefile))
 DIRS := $(EXAMPLES) $(SUBDIRS)
 
-.PHONY: all clean $(EXAMPLES) $(addprefix build-,$(DIRS)) $(addprefix clean-,$(DIRS))
-all: $(filter-out %_NOT_COMPLETE,$(EXAMPLES))
+.PHONY: all clean ds $(EXAMPLES) $(addprefix build-,$(DIRS)) $(addprefix clean-,$(DIRS))
+all: $(filter-out %_NOT_COMPLETE,$(EXAMPLES)) ds
 
-# Naming an example builds it together with its subdirectories.
+# Naming an example builds it together with its subdirectories; naming a
+# directory without a Makefile of its own, like ds, builds the examples
+# in it.
 $(EXAMPLES): %: build-%
 $(foreach d,$(SUBDIRS),$(eval $(firstword $(subst /, ,$d)): build-$d))
 

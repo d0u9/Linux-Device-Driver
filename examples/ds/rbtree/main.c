@@ -13,12 +13,14 @@ struct rb_data {
 	struct rb_node rb;
 };
 
-static struct rb_root demo_root = RB_ROOT;
-
 /*
  * The kernel's rbtree only balances; it knows nothing of keys. The order
  * comes from the driver, as a comparison function: <0, 0 or >0, like
  * strcmp().
+ *
+ * There is no internal lock: concurrent access needs caller-provided
+ * synchronization. Never change an inserted node's key in place; erase
+ * and reinsert it so that the ordering remains valid.
  */
 static int rb_data_cmp(struct rb_node *a, const struct rb_node *b)
 {
@@ -206,21 +208,21 @@ static void show_search(struct rb_root *root, int key)
 		pr_info("search %d: not found\n", key);
 }
 
-static int __init mod_init(void)
+static int __init rbtree_demo(void)
 {
-	struct rb_root *root = &demo_root;
+	struct rb_root root = RB_ROOT;
 	struct rb_data *old, *new, *dup;
 	int err;
 
-	err = insert_range(root, 1, 6);
+	err = insert_range(&root, 1, 6);
 	if (err)
 		goto out;
-	dump_tree(root, "keys 1..6");
+	dump_tree(&root, "keys 1..6");
 
-	err = insert_range(root, 7, 11);
+	err = insert_range(&root, 7, 11);
 	if (err)
 		goto out;
-	dump_tree(root, "keys 7..11 added");
+	dump_tree(&root, "keys 7..11 added");
 
 	/* a key that is already there is refused, and the node is ours */
 	dup = kzalloc_obj(*dup);
@@ -230,16 +232,16 @@ static int __init mod_init(void)
 	}
 	dup->key = 3;
 	dup->val = '?';
-	if (!insert(root, dup)) {
+	if (!insert(&root, dup)) {
 		pr_info("insert 3 again: refused\n");
 		kfree(dup);
 	}
 
-	show_search(root, 100);
-	show_search(root, 2);
+	show_search(&root, 100);
+	show_search(&root, 2);
 
 	/* replace the node of key 2: same key, so the same place in the tree */
-	old = search(root, 2);
+	old = search(&root, 2);
 	new = kzalloc_obj(*new);
 	if (!old || !new) {
 		kfree(new);
@@ -248,24 +250,24 @@ static int __init mod_init(void)
 	}
 	new->key = 2;
 	new->val = 'z';
-	rb_replace_node(&old->rb, &new->rb, root);
+	rb_replace_node(&old->rb, &new->rb, &root);
 	kfree(old);
-	show_search(root, 2);
-	if (search(root, 2) != new) {
+	show_search(&root, 2);
+	if (search(&root, 2) != new) {
 		pr_err("replaced node not found\n");
 		err = -EINVAL;
 		goto out;
 	}
 
 	/* erase it: unlinked and rebalanced, then it is ours to free */
-	rb_erase(&new->rb, root);
+	rb_erase(&new->rb, &root);
 	kfree(new);
-	show_search(root, 2);
-	dump_tree(root, "key 2 erased");
+	show_search(&root, 2);
+	dump_tree(&root, "key 2 erased");
 
 	/* 1..11 less key 2, in order, 'C' still at 3 */
-	if (check_tree(root) != 10 || search(root, 2) ||
-	    !search(root, 3) || search(root, 3)->val != 'C') {
+	if (check_tree(&root) != 10 || search(&root, 2) ||
+	    !search(&root, 3) || search(&root, 3)->val != 'C') {
 		pr_err("tree check failed\n");
 		err = -EINVAL;
 		goto out;
@@ -273,10 +275,16 @@ static int __init mod_init(void)
 	pr_info("tree check passed\n");
 
 out:
-	destroy_tree(root);
+	destroy_tree(&root);
 	return err;
 }
 
+static int __init mod_init(void)
+{
+	return rbtree_demo();
+}
+
+/* All resources have been released before rbtree_demo() returns. */
 static void __exit mod_exit(void)
 {
 }
