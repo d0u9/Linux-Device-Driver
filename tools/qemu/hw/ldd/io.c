@@ -10,22 +10,24 @@
 #include "hw/isa/isa.h"
 #include "migration/vmstate.h"
 
-// ldd-io: an ISA device with eight LEDs, an 8x8 LED matrix and a one-byte
-// receive path. See tools/qemu/ldd-io.md for the full description.
+/*
+ * ldd-io: an ISA device with eight LEDs, an 8x8 LED matrix and a one-byte
+ * receive path. See tools/qemu/ldd-io.md for the full description.
+ */
 
-// Register offsets
-#define LDD_IO_DATA         0   // write: LEDs, read: received byte
-#define LDD_IO_STATUS       1   // read, write 1 to clear
-#define LDD_IO_CTRL         2   // read/write
-#define LDD_IO_MATRIX       8   // 8 bytes, one per row
+/* Register offsets */
+#define LDD_IO_DATA         0   /* write: LEDs, read: received byte */
+#define LDD_IO_STATUS       1   /* read, write 1 to clear */
+#define LDD_IO_CTRL         2   /* read/write */
+#define LDD_IO_MATRIX       8   /* 8 bytes, one per row */
 #define LDD_IO_MATRIX_ROWS  8
 #define LDD_IO_SIZE         16
-#define LDD_IO_PORT_LIMIT   0x10000     // size of the x86 I/O port space
+#define LDD_IO_PORT_LIMIT   0x10000     /* size of the x86 I/O port space */
 
-// STATUS bits
+/* STATUS bits */
 #define LDD_IO_STATUS_RX_READY  (1u << 0)
 
-// CTRL bits
+/* CTRL bits */
 #define LDD_IO_CTRL_IRQ_EN      (1u << 0)
 #define LDD_IO_CTRL_LOOPBACK    (1u << 1)
 #define LDD_IO_CTRL_MASK        (LDD_IO_CTRL_IRQ_EN | LDD_IO_CTRL_LOOPBACK)
@@ -41,29 +43,29 @@ struct LDDIOState {
     CharFrontend keyboard;
     qemu_irq irq;
 
-    // properties
+    /* properties */
     uint32_t iobase;
     bool mmio;
     uint64_t mmiobase;
     uint32_t isairq;
 
-    // registers
+    /* registers */
     uint8_t data_out;
     uint8_t data_in;
     uint8_t status;
     uint8_t ctrl;
     uint8_t matrix[LDD_IO_MATRIX_ROWS];
 
-    uint32_t irq_pulses;    // shown on the panel only
+    uint32_t irq_pulses;    /* shown on the panel only */
 
-    // panel output that the chardev has not taken yet
+    /* panel output that the chardev has not taken yet */
     GString *panel_out;
     guint panel_watch;
-    bool panel_dirty;       // state changed while panel_out was busy
+    bool panel_dirty;       /* state changed while panel_out was busy */
 };
 
-#define LDD_IO_LED_ON   "\033[1;32m●\033[0m"   // green
-#define LDD_IO_LED_OFF  "\033[90m○\033[0m"     // grey
+#define LDD_IO_LED_ON   "\033[1;32m●\033[0m"   /* green */
+#define LDD_IO_LED_OFF  "\033[90m○\033[0m"     /* grey */
 
 static void ldd_io_append_leds(GString *line, uint8_t v)
 {
@@ -80,8 +82,10 @@ static const char *ldd_io_bit(bool on)
     return on ? LDD_IO_LED_ON : LDD_IO_LED_OFF;
 }
 
-// One panel line: label in 11 columns, content in 17, then the hex value.
-// The content is padded by hand because LEDs take more bytes than columns.
+/*
+ * One panel line: label in 11 columns, content in 17, then the hex value.
+ * The content is padded by hand because LEDs take more bytes than columns.
+ */
 static void ldd_io_append_row(GString *panel, const char *label,
                               const char *content, int width, const char *hex)
 {
@@ -89,7 +93,7 @@ static void ldd_io_append_row(GString *panel, const char *label,
                            label, content, 17 - width, "", hex);
 }
 
-// Append one frame of the panel, drawn from the top left corner
+/* Append one frame of the panel, drawn from the top left corner */
 static void ldd_io_build_panel(LDDIOState *state, GString *panel)
 {
     g_autoptr(GString) content = g_string_new(NULL);
@@ -152,10 +156,12 @@ static void ldd_io_build_panel(LDDIOState *state, GString *panel)
 static gboolean ldd_io_panel_writable(void *do_not_use, GIOCondition cond,
                                       void *opaque);
 
-// Send panel_out without blocking. What the chardev does not take now is
-// sent when it becomes writable, so a slow viewer never stalls the guest.
-// A frame is always sent whole, so escape sequences are never cut; frames
-// drawn in the meantime collapse into one redraw of the latest state.
+/*
+ * Send panel_out without blocking. What the chardev does not take now is
+ * sent when it becomes writable, so a slow viewer never stalls the guest.
+ * A frame is always sent whole, so escape sequences are never cut; frames
+ * drawn in the meantime collapse into one redraw of the latest state.
+ */
 static void ldd_io_panel_flush(LDDIOState *state)
 {
     GString *out = state->panel_out;
@@ -165,7 +171,7 @@ static void ldd_io_panel_flush(LDDIOState *state)
                                   out->len);
 
         if (n < 0 && errno != EAGAIN) {
-            g_string_truncate(out, 0);  // viewer gone, drop the frame
+            g_string_truncate(out, 0);  /* viewer gone, drop the frame */
             return;
         }
         if (n <= 0) {
@@ -198,21 +204,21 @@ static gboolean ldd_io_panel_writable(void *do_not_use, GIOCondition cond,
     return G_SOURCE_REMOVE;
 }
 
-// Redraw the whole panel in place
+/* Redraw the whole panel in place */
 static void ldd_io_draw_panel(LDDIOState *state)
 {
     if (!qemu_chr_fe_backend_connected(&state->panel)) {
         return;
     }
     if (state->panel_out->len) {
-        state->panel_dirty = true;      // drawn once the current frame is out
+        state->panel_dirty = true;  /* drawn once this frame is out */
         return;
     }
     ldd_io_build_panel(state, state->panel_out);
     ldd_io_panel_flush(state);
 }
 
-// Forget output that was meant for a viewer that has gone
+/* Forget output that was meant for a viewer that has gone */
 static void ldd_io_panel_drop(LDDIOState *state)
 {
     if (state->panel_watch) {
@@ -229,7 +235,7 @@ static void ldd_io_pulse(LDDIOState *state)
     state->irq_pulses++;
 }
 
-// A byte enters the receive buffer: rule 1 of the interrupt
+/* A byte enters the receive buffer: rule 1 of the interrupt */
 static void ldd_io_receive_byte(LDDIOState *state, uint8_t byte)
 {
     state->data_in = byte;
@@ -257,7 +263,7 @@ static void ldd_io_keyboard_receive(void *opaque, const uint8_t *buf,
 {
     LDDIOState *state = opaque;
 
-    // can_receive allows one byte at a time
+    /* can_receive allows one byte at a time */
     ldd_io_receive_byte(state, buf[0]);
     ldd_io_draw_panel(state);
 }
@@ -268,7 +274,7 @@ static void ldd_io_panel_event(void *opaque, QEMUChrEvent event)
 
     switch (event) {
     case CHR_EVENT_OPENED:
-        // clear the screen and hide the cursor, then draw
+        /* clear the screen and hide the cursor, then draw */
         ldd_io_panel_drop(state);
         g_string_append(state->panel_out, "\033[2J\033[?25l");
         ldd_io_build_panel(state, state->panel_out);
@@ -297,7 +303,7 @@ static uint64_t ldd_io_read(void *opaque, hwaddr addr, unsigned size)
     uint64_t v = 0;
 
     if (addr >= LDD_IO_MATRIX) {
-        // little endian: the lowest offset is the least significant byte
+        /* little endian: the lowest offset is the least significant byte */
         for (int i = size - 1; i >= 0; i--) {
             v = (v << 8) | state->matrix[addr - LDD_IO_MATRIX + i];
         }
@@ -312,7 +318,7 @@ static uint64_t ldd_io_read(void *opaque, hwaddr addr, unsigned size)
     case LDD_IO_CTRL:
         return state->ctrl;
     }
-    return 0;   // reserved
+    return 0;   /* reserved */
 }
 
 static void ldd_io_write(void *opaque, hwaddr addr, uint64_t data,
@@ -326,7 +332,7 @@ static void ldd_io_write(void *opaque, hwaddr addr, uint64_t data,
         for (unsigned i = 0; i < size; i++) {
             state->matrix[addr - LDD_IO_MATRIX + i] = data >> (8 * i);
         }
-        ldd_io_draw_panel(state);   // once per access, whatever its width
+        ldd_io_draw_panel(state);   /* once per access, whatever its width */
         return;
     }
 
@@ -358,13 +364,13 @@ static void ldd_io_write(void *opaque, hwaddr addr, uint64_t data,
         }
         old = state->ctrl;
         state->ctrl = byte & LDD_IO_CTRL_MASK;
-        // rule 2 of the interrupt
+        /* rule 2 of the interrupt */
         if (!(old & LDD_IO_CTRL_IRQ_EN) &&
             (state->ctrl & LDD_IO_CTRL_IRQ_EN) &&
             (state->status & LDD_IO_STATUS_RX_READY)) {
             ldd_io_pulse(state);
         }
-        // input held back during loopback can come in now
+        /* input held back during loopback can come in now */
         if ((old & LDD_IO_CTRL_LOOPBACK) &&
             !(state->ctrl & LDD_IO_CTRL_LOOPBACK)) {
             qemu_chr_fe_accept_input(&state->keyboard);
@@ -428,13 +434,13 @@ static void ldd_io_realize(DeviceState *dev, Error **errp)
     if (state->mmio) {
         MemoryRegionSection section;
 
-        // 8-byte MATRIX accesses must be naturally aligned in memory too
+        /* 8-byte MATRIX accesses must be naturally aligned in memory too */
         if (state->mmiobase & (LDD_IO_SIZE - 1)) {
             error_setg(errp, "mmiobase 0x%" PRIx64 " is not %d-byte aligned",
                        state->mmiobase, LDD_IO_SIZE);
             return;
         }
-        // catches devices already mapped, not ones mapped later
+        /* catches devices already mapped, not ones mapped later */
         section = memory_region_find(isa_address_space(isadev),
                                      state->mmiobase, LDD_IO_SIZE);
         if (section.mr) {

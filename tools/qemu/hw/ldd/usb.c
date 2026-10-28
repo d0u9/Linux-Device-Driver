@@ -9,22 +9,24 @@
 #include "migration/vmstate.h"
 #include "hw/usb/desc.h"
 
-// ldd-usb: a USB device that ticks every few seconds. A bulk OUT endpoint
-// sets the interval, an interrupt IN endpoint reports each tick and a bulk
-// IN endpoint returns the time of the last one. See tools/qemu/ldd-usb.md.
+/*
+ * ldd-usb: a USB device that ticks every few seconds. A bulk OUT endpoint
+ * sets the interval, an interrupt IN endpoint reports each tick and a bulk
+ * IN endpoint returns the time of the last one. See tools/qemu/ldd-usb.md.
+ */
 
 #define LDD_USB_VENDOR_ID       0x1234
 #define LDD_USB_PRODUCT_ID      0x7863
 
-// Endpoint numbers
-#define LDD_USB_EP_TIME         1   // bulk IN: time of the last tick
-#define LDD_USB_EP_INTERVAL     2   // bulk OUT: new interval
-#define LDD_USB_EP_TICK         3   // interrupt IN: one report per tick
+/* Endpoint numbers */
+#define LDD_USB_EP_TIME         1   /* bulk IN: time of the last tick */
+#define LDD_USB_EP_INTERVAL     2   /* bulk OUT: new interval */
+#define LDD_USB_EP_TICK         3   /* interrupt IN: one report per tick */
 
 #define LDD_USB_BULK_PACKET     64
 #define LDD_USB_INT_PACKET      8
-#define LDD_USB_INTERVAL_MAX    3600    // seconds
-#define LDD_USB_TIME_LEN        20      // "YYYY-MM-DD HH:MM:SS" and a NUL
+#define LDD_USB_INTERVAL_MAX    3600    /* seconds */
+#define LDD_USB_TIME_LEN        20      /* "YYYY-MM-DD HH:MM:SS" and a NUL */
 
 #define TYPE_LDD_USB "ldd-usb"
 OBJECT_DECLARE_SIMPLE_TYPE(LDDUSBState, LDD_USB)
@@ -35,11 +37,11 @@ struct LDDUSBState {
     USBEndpoint *tick_ep;
     QEMUTimer *timer;
 
-    uint32_t interval;          // seconds, set by the driver
-    bool tick_pending;          // a tick not yet reported on the tick EP
+    uint32_t interval;          /* seconds, set by the driver */
+    bool tick_pending;          /* a tick not yet reported on the tick EP */
     char time[LDD_USB_TIME_LEN];
 
-    // Properties
+    /* Properties */
     uint32_t default_interval;
 };
 
@@ -76,7 +78,7 @@ static const USBDescIface desc_iface = {
             .bEndpointAddress = USB_DIR_IN | LDD_USB_EP_TICK,
             .bmAttributes     = USB_ENDPOINT_XFER_INT,
             .wMaxPacketSize   = LDD_USB_INT_PACKET,
-            .bInterval        = 10,     // ms at full speed
+            .bInterval        = 10,     /* ms at full speed */
         },
     },
 };
@@ -110,7 +112,7 @@ static const USBDesc desc_ldd_usb = {
     .str  = desc_strings,
 };
 
-// Remember the host's local time, returned on the time EP.
+/* Remember the host's local time, returned on the time EP. */
 static void ldd_usb_stamp_time(LDDUSBState *s)
 {
     time_t now = time(NULL);
@@ -134,7 +136,7 @@ static void ldd_usb_tick(void *opaque)
     s->tick_pending = true;
     ldd_usb_arm_timer(s);
 
-    // The host controller retries a NAKed interrupt transfer on wakeup.
+    /* The host controller retries a NAKed interrupt transfer on wakeup. */
     usb_wakeup(s->tick_ep, 0);
 }
 
@@ -152,14 +154,14 @@ static void ldd_usb_handle_control(USBDevice *dev, USBPacket *p, int request,
                                    int value, int index, int length,
                                    uint8_t *data)
 {
-    // Only the standard requests, answered from the descriptors.
+    /* Only the standard requests, answered from the descriptors. */
     if (usb_desc_handle_control(dev, p, request, value, index, length,
                                 data) < 0) {
         p->status = USB_RET_STALL;
     }
 }
 
-// Bulk OUT: a 32-bit little-endian interval in seconds.
+/* Bulk OUT: a 32-bit little-endian interval in seconds. */
 static void ldd_usb_set_interval(LDDUSBState *s, USBPacket *p)
 {
     uint32_t le;
@@ -175,7 +177,7 @@ static void ldd_usb_set_interval(LDDUSBState *s, USBPacket *p)
     ldd_usb_arm_timer(s);
 }
 
-// Interrupt IN: { le32 1, le32 interval } once per tick, NAK in between.
+/* Interrupt IN: { le32 1, le32 interval } once per tick, NAK in between. */
 static void ldd_usb_report_tick(LDDUSBState *s, USBPacket *p)
 {
     uint32_t report[2];

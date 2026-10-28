@@ -124,13 +124,15 @@ static void ldd_pcie_update_irq(LDDPCIEState *ps)
     if (msix_enabled(pdev)) {
         pci_irq_deassert(pdev);
         for (int i = 0; i < LDD_MSIX_VECTORS; i++) {
-            if (new & BIT(i))
+            if (new & BIT(i)) {
                 msix_notify(pdev, i);
+            }
         }
     } else if (msi_enabled(pdev)) {
         pci_irq_deassert(pdev);
-        if (new)
+        if (new) {
             msi_notify(pdev, 0);
+        }
     } else {
         pci_set_irq(pdev, pending != 0);
     }
@@ -165,17 +167,20 @@ static uint32_t ldd_pcie_transfer(LDDPCIEState *ps)
     uint64_t total = 0;
     uint32_t off;
 
-    if (!(pci_get_word(pdev->config + PCI_COMMAND) & PCI_COMMAND_MASTER))
+    if (!(pci_get_word(pdev->config + PCI_COMMAND) & PCI_COMMAND_MASTER)) {
         return LDD_ERR_NO_MASTER;
+    }
 
-    if (count == 0 || count > ps->max_desc)
+    if (count == 0 || count > ps->max_desc) {
         return LDD_ERR_BAD_COUNT;
+    }
 
     desc = g_new(LDDPCIEDesc, count);
     if (!ldd_pcie_dma_ok(ps, ps->regs.desc_addr, count * sizeof(*desc)) ||
         pci_dma_read(pdev, ps->regs.desc_addr, desc,
-                     count * sizeof(*desc)) != MEMTX_OK)
+                     count * sizeof(*desc)) != MEMTX_OK) {
         return LDD_ERR_DMA_FAULT;       /* ERR_DESC stays 0 */
+    }
 
     for (uint32_t i = 0; i < count; i++) {
         desc[i].addr = le64_to_cpu(desc[i].addr);
@@ -191,8 +196,9 @@ static uint32_t ldd_pcie_transfer(LDDPCIEState *ps)
     }
 
     if (ps->regs.dev_offset > LDD_MEM_SIZE ||
-        total > LDD_MEM_SIZE - ps->regs.dev_offset)
+        total > LDD_MEM_SIZE - ps->regs.dev_offset) {
         return LDD_ERR_OUT_OF_RANGE;
+    }
 
     off = ps->regs.dev_offset;
     for (uint32_t i = 0; i < count; i++) {
@@ -205,8 +211,9 @@ static uint32_t ldd_pcie_transfer(LDDPCIEState *ps)
         } else if (to_guest && ps->regs.xor) {
             g_autofree uint8_t *buf = g_malloc(len);
 
-            for (uint32_t j = 0; j < len; j++)
+            for (uint32_t j = 0; j < len; j++) {
                 buf[j] = mem[off + j] ^ ps->regs.xor;
+            }
             res = pci_dma_write(pdev, addr, buf, len);
         } else if (to_guest) {
             res = pci_dma_write(pdev, addr, mem + off, len);
@@ -242,9 +249,11 @@ static void ldd_pcie_start(LDDPCIEState *ps)
      * driver really has to wait for the interrupt or poll BUSY.
      */
     ps->regs.result = ldd_pcie_transfer(ps);
-    if (ps->regs.result)
-        qemu_log_mask(LOG_GUEST_ERROR, "ldd-pcie: transfer failed, ERR_CODE %u\n",
+    if (ps->regs.result) {
+        qemu_log_mask(LOG_GUEST_ERROR,
+                      "ldd-pcie: transfer failed, ERR_CODE %u\n",
                       ps->regs.result);
+    }
 
     timer_mod(ps->timer, qemu_clock_get_us(QEMU_CLOCK_VIRTUAL) +
                          ps->latency_us);
@@ -326,8 +335,9 @@ static void ldd_pcie_bar0_write(void *opaque, hwaddr addr, uint64_t val,
         ps->regs.scratch = val;
         break;
     case LDD_REG_CTRL:
-        if (val & LDD_CTRL_RESET)
+        if (val & LDD_CTRL_RESET) {
             ldd_pcie_reset(ps);
+        }
         break;
     case LDD_REG_INT_STATUS:        /* W1C */
         ps->regs.int_status &= ~val;
@@ -351,15 +361,16 @@ static void ldd_pcie_bar0_write(void *opaque, hwaddr addr, uint64_t val,
                           " while busy, ignored\n", addr);
             break;
         }
-        if (addr == LDD_REG_DESC_ADDR_LO)
+        if (addr == LDD_REG_DESC_ADDR_LO) {
             ps->regs.desc_addr = deposit64(ps->regs.desc_addr, 0, 32,
                                            val & ~(LDD_DESC_ADDR_ALIGN - 1));
-        else if (addr == LDD_REG_DESC_ADDR_HI)
+        } else if (addr == LDD_REG_DESC_ADDR_HI) {
             ps->regs.desc_addr = deposit64(ps->regs.desc_addr, 32, 32, val);
-        else if (addr == LDD_REG_DESC_COUNT)
+        } else if (addr == LDD_REG_DESC_COUNT) {
             ps->regs.desc_count = val;
-        else
+        } else {
             ps->regs.dev_offset = val;
+        }
         break;
     case LDD_REG_DMA_CTRL:
         if (busy) {
@@ -368,8 +379,9 @@ static void ldd_pcie_bar0_write(void *opaque, hwaddr addr, uint64_t val,
             break;
         }
         ps->regs.dma_ctrl = val & LDD_DMA_CTRL_DIR;
-        if (val & LDD_DMA_CTRL_START)
+        if (val & LDD_DMA_CTRL_START) {
             ldd_pcie_start(ps);
+        }
         break;
     case LDD_REG_XOR:
         ps->regs.xor = val & 0xff;
@@ -408,7 +420,8 @@ static void ldd_pcie_realize(PCIDevice *pdev, Error **errp)
 
     if (ps->max_seg < 512 || ps->max_seg > 1 * MiB ||
         !is_power_of_2(ps->max_seg)) {
-        error_setg(errp, "ldd-pcie: max-seg must be a power of 2 from 512 to 1048576");
+        error_setg(errp, "ldd-pcie: max-seg must be a power of 2 "
+                   "from 512 to 1048576");
         return;
     }
     if (ps->max_desc < 1 || ps->max_desc > 4096) {
@@ -418,8 +431,9 @@ static void ldd_pcie_realize(PCIDevice *pdev, Error **errp)
 
     pci_config_set_interrupt_pin(pdev->config, 1);
 
-    if (pci_pm_init(pdev, 0, errp) < 0)
+    if (pci_pm_init(pdev, 0, errp) < 0) {
         return;
+    }
 
     if (pcie_endpoint_cap_init(pdev, 0) < 0) {
         error_setg(errp, "ldd-pcie: cannot add PCIe capability");
@@ -427,9 +441,9 @@ static void ldd_pcie_realize(PCIDevice *pdev, Error **errp)
     }
     pcie_cap_flr_init(pdev);
 
-    if (msi_init(pdev, 0, 1, true, false, errp) < 0)
+    if (msi_init(pdev, 0, 1, true, false, errp) < 0) {
         return;
-
+    }
 
     memory_region_init_io(&ps->bar0, OBJECT(ps), &ldd_pcie_bar0_ops, ps,
                           "ldd-pcie-bar0", 4 * KiB);
@@ -438,21 +452,24 @@ static void ldd_pcie_realize(PCIDevice *pdev, Error **errp)
                      PCI_BASE_ADDRESS_MEM_TYPE_64,
                      &ps->bar0);
 
-
     if (!memory_region_init_ram(&ps->bar2, OBJECT(ps),
-                                "ldd-pcie-bar2", LDD_MEM_SIZE, errp))
+                                "ldd-pcie-bar2", LDD_MEM_SIZE, errp)) {
         return;
+    }
     pci_register_bar(pdev, 2,
                      PCI_BASE_ADDRESS_SPACE_MEMORY |
                      PCI_BASE_ADDRESS_MEM_TYPE_64 |
                      PCI_BASE_ADDRESS_MEM_PREFETCH,
                      &ps->bar2);
 
-    if (msix_init(pdev, LDD_MSIX_VECTORS, &ps->bar0, 0, 0x800, &ps->bar0, 0, 0xc00, 0, errp) < 0)
+    if (msix_init(pdev, LDD_MSIX_VECTORS, &ps->bar0, 0, 0x800,
+                  &ps->bar0, 0, 0xc00, 0, errp) < 0) {
         return;
+    }
 
-    for (int i = 0; i < LDD_MSIX_VECTORS; i++)
+    for (int i = 0; i < LDD_MSIX_VECTORS; i++) {
         msix_vector_use(pdev, i);
+    }
 
     ps->timer = timer_new_us(QEMU_CLOCK_VIRTUAL, ldd_pcie_complete, ps);
 }
